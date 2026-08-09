@@ -1,39 +1,56 @@
-# 计费同步镜像：内置 cron，每天凌晨自动把 New-API 消费日志同步到 NocoDB
+# 计费同步镜像：用 loop 守护替代 cron（更符合容器范式，可非 root 运行）
+# 默认每天凌晨同步昨天；间隔和参数由环境变量控制，runtime 生效
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# 装依赖
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 拷代码
 COPY . .
 
-# 时区设为北京时间（cron 和日志时间都用它）
+# 时区设为北京时间
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 装 cron
-RUN apt-get update && apt-get install -y --no-install-recommends cron && rm -rf /var/lib/apt/lists/*
-
-# cron 表达式可由环境变量 COST_SYNC_CRON 覆盖，默认每天凌晨 1:05 跑昨天的数据
-ENV COST_SYNC_CRON="5 1 * * *"
+# 调度参数（runtime 可覆盖）
+# COST_SYNC_INTERVAL_HOURS：同步间隔（小时），默认 24（每天一次）
+# COST_SYNC_ON_STARTUP：启动时是否立即跑一次（true/false），默认 true
+# COST_SYNC_ARGS：传给 sync.py 的参数，默认 "--days 1"
+ENV COST_SYNC_INTERVAL_HOURS=24
+ENV COST_SYNC_ON_STARTUP=true
 ENV COST_SYNC_ARGS="--days 1"
 
-# 用 envsubst 把环境变量注入 cron 任务（容器启动时执行）
+# 非 root 运行（loop 守护无需 root，比 cron 更安全）
+RUN useradd -r -u 1000 app && chown -R app /app
+USER app
+
+# 用 loop 脚本替代 cron 守护：
+#  - 启动时（可选）立即跑一次
+#  - 之后每 N 小时跑一次
+#  - 单次失败不影响下次，退出码写入状态文件供 healthcheck
 RUN printf '#!/bin/sh\n\
 set -e\n\
-mkdir -p /var/log\n\
-printenv | grep -E "^(COST_|TZ)" > /app/.cron.env\n\
-echo "$COST_SYNC_CRON root . /app/.cron.env; cd /app && python sync.py $COST_SYNC_ARGS >> /var/log/cost-sync.log 2>&1" > /etc/cron.d/cost-sync\n\
-chmod 0644 /etc/cron.d/cost-sync\n\
-crontab /etc/cron.d/cost-sync\n\
-echo "cron 已配置：$COST_SYNC_CRON 执行 python sync.py $COST_SYNC_ARGS"\n\
-exec cron -f\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+mkdir -p /tmp/cost-sync\n\
+if [ "$COST_SYNC_ON_STARTUP" = "true" ]; then\n\
+  echo "[$(date)] 启动时立即执行一次同步…"\n\
+  python sync.py $COST_SYNC_ARGS > /tmp/cost-sync/last_run.log 2>&1 || echo "[$(date)] 启动同步失败（见日志）" >> /tmp/cost-sync/last_run.log\n\
+  date +%s > /tmp/cost-sync/last_success_ts\n\
+fi\n\
+echo "[$(date)] 进入循环：每 $COST_SYNC_INTERVAL_HOURS 小时同步一次"\n\
+while true; do\n\
+  sleep $((${COST_SYNC_INTERVAL_HOURS:-24} * 3600))\n\
+  echo "[$(date)] 开始定时同步…"\n\
+  if python sync.py $COST_SYNC_ARGS >> /tmp/cost-sync/last_run.log 2>&1; then\n\
+    date +%s > /tmp/cost-sync/last_success_ts\n\
+    echo "[$(date)] 同步成功" >> /tmp/cost-sync/last_run.log\n\
+  else\n\
+    echo "[$(date)] 同步失败（见上方日志）" >> /tmp/cost-sync/last_run.log\n\
+  fi\n\
+done\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# 健康检查：看 cron 进程在不在
-HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
-  CMD pgrep cron > /dev/null || exit 1
+# healthcheck：检查 1.5 倍间隔内有成功记录，证明任务真的在跑
+HEALTHCHECK --interval=300s --timeout=10s --start-period=120s --retries=2 \
+  CMD python -c "import os,time; ts=float(open('/tmp/cost-sync/last_success_ts').read()); age=time.time()-ts; import sys; sys.exit(0 if age < float(os.environ.get('COST_SYNC_INTERVAL_HOURS','24'))*3600*1.5 else 1)"
 
 CMD ["/app/entrypoint.sh"]

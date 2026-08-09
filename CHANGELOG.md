@@ -5,6 +5,60 @@
 
 ---
 
+## [0.3.1] - 2026-08-09
+
+### 代码审查后的修复（基于全面 review，覆盖全部 P0 + P1）
+
+#### 🔴 P0 数据正确性
+- **修复 `cost-sync/config.py` `_env` 忽略 default 参数**：默认 base_url 此前静默失效，
+  改为正确透传 `os.environ.get(key, default)`
+- **修复 `nocodb_writer` 去重键遗漏 Group 字段**：导致同日同人同模型同渠道但不同分组的
+  聚合行互相覆盖（金额丢失）。去重键补齐为 5 字段，与 aggregator 一致
+- **修复 NocoDB where 子句注入面**：新增 `_escape_where_value()`，对值做引号包裹 + 单引号转义，
+  防止含 `,` `~` `()` 的渠道名/模型名破坏过滤或造成跨行污染
+- **修复 submit-tool 虚假功能宣称**：移除"已自动归档到 MinIO"等与实现不符的注释，
+  如实标注成片链接为方舟直链（有时效）；移除未被使用的 project/episode/shot_no 输入框
+- **修复 adapter / submit-tool 未纳入 compose**：两个服务现在都在 docker-compose 里，
+  与 README/文档"一键启动"的宣传一致；容器内用服务名互通，不再依赖 `--network host`
+- **修复 `.env.example` 变量缺失与插值失效**：补全 `NOCODB_BASE_URL`/`NOCODB_TOKEN`/
+  `STORYBOARDS_TABLE_ID`；`SUBMIT_MINIO_*` 改为显式值（`${VAR}` 在 --env-file 直灌时不展开）
+- **修复 `submit-tool/Dockerfile` 漏 COPY**：`comfyui_bridge.py` 和 `templates/` 未拷进镜像，
+  导致 ComfyUI 专业模式 import 失败
+
+#### 🟠 P1 安全与健壮性
+- **端口默认绑 127.0.0.1**：所有服务端口从 `0.0.0.0` 改为 `127.0.0.1:` 前缀，
+  避免误暴露到公网（部署指南说明如何按需放开到 ZeroTier 网段）
+- **所有业务容器以非 root 运行**：4 个 Dockerfile 统一加 `useradd app && USER app`
+- **cost-sync 改用 loop 守护替代 cron**：cron 需 root 且 healthcheck 无效；
+  改为 while+sleep loop 可非 root 运行，healthcheck 检查"最近成功时间戳"真正反映任务成败；
+  调度参数 `COST_SYNC_INTERVAL_HOURS` 现在在 runtime 生效（原 cron 在 build 期固化失效）
+- **业务镜像锁版本**：`minio`/`nocodb`/`new-api`/`mc` 从 `:latest` 改为具体 tag，保证可复现
+- **MinIO healthcheck 改 HTTP 端点**：`mc ready local` 依赖 alias 配置，改用
+  `curl /minio/health/ready` 更稳健
+- **修复 adapter 非法 role 返回 500**：`ImageItem.role` 改用 Enum 字段，pydantic 自动返回 422
+- **修复 `newapi_client` 数值字段遇 null 崩溃**：新增 `_to_int()` 兜底 None/bool/非数值
+- **修复 `cost-dashboard` 换数据源不刷新**：`fetch_costs` 参数去掉下划线前缀
+  （Streamlit cache_data 约定 `_` 开头参数不进缓存键）
+- **ComfyUI 工作流错误透出**：`wait_result` 额外检查 `status_str=="success"`，
+  失败时从 messages 提取错误详情，不再把失败当成功返回空输出
+- **ComfyUI 输出 URL 编码**：`output_urls` 对 filename/subfolder 做 URL 编码，
+  防含中文/空格/`&` 的文件名损坏 URL
+- **submit-tool 文件上传安全加固**：用 uuid 重命名 + 后缀白名单 + 20MB 大小限制，
+  杜绝文件名注入/路径穿越
+- **适配器 `_parse` 防 JSONDecodeError**：2xx 非 JSON 响应包装成 VolcError，不再冒泡成 500
+- **全项目加 `.dockerignore`**：防止 `.env`/`data`/缓存/测试/`.git` 烤进镜像层
+
+#### 测试
+- cost-sync 测试从 10 个增至 **14 个**（新增：Group 去重回归、where 转义、failed 计数、整天对齐）
+- 全部 **23 个测试通过**（adapter 9 + cost-sync 14）
+- `docker compose config` 验证合法
+
+#### 文档
+- 部署指南第 7、8 节：从"裸 docker run --network host"改为 compose 启动
+- 9.5 节：`COST_SYNC_CRON` 改为 `COST_SYNC_INTERVAL_HOURS`
+
+---
+
 ## [0.3.0] - 2026-08-09
 
 ### 新增

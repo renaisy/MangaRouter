@@ -21,9 +21,22 @@ def test_day_range_specific_date():
     assert desc == "2026-08-08"
 
 
-def test_day_range_now_not_future():
-    """默认 days 模式：结束时间是现在，开始时间在过去。"""
+def test_day_range_days_aligns_to_whole_days():
+    """days 模式：按整天对齐。days=1 = 昨天 [昨0:00, 今0:00)，end 为今天 0:00。"""
     from sync import day_range
-    start_ts, end_ts, _ = day_range(None, 1)
-    now = datetime.now(tz=CN_TZ).timestamp()
-    assert start_ts <= now <= end_ts + 60  # 允许 1 分钟误差
+    start_ts, end_ts, desc = day_range(None, 1)
+    today_0 = datetime.now(tz=CN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_0 = today_0 - timedelta(days=1)
+    assert datetime.fromtimestamp(start_ts, tz=CN_TZ) == yesterday_0
+    assert datetime.fromtimestamp(end_ts, tz=CN_TZ) == today_0
+    assert desc == yesterday_0.strftime("%Y-%m-%d")  # 单天只显示日期
+
+
+def test_day_range_multi_days():
+    """days=3：覆盖过去 3 个完整自然日，描述用区间。"""
+    from sync import day_range
+    start_ts, end_ts, desc = day_range(None, 3)
+    today_0 = datetime.now(tz=CN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    assert datetime.fromtimestamp(start_ts, tz=CN_TZ) == today_0 - timedelta(days=3)
+    assert datetime.fromtimestamp(end_ts, tz=CN_TZ) == today_0
+    assert "~" in desc  # 多天用区间描述

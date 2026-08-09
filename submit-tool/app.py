@@ -8,9 +8,7 @@ v0.2 新增：
 from __future__ import annotations
 
 import os
-import tempfile
 from datetime import datetime
-from urllib.parse import quote
 
 import httpx
 import streamlit as st
@@ -83,13 +81,31 @@ def minio_client() -> Minio:
                  secret_key=cfg.minio_sk, secure=MINIO_SECURE)
 
 
+# 允许的图片后缀白名单（防伪造后缀/路径穿越）
+_ALLOWED_IMG_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+_MAX_IMG_BYTES = 20 * 1024 * 1024  # 20MB 上限
+
+
 def upload_image_to_minio(uploaded_file, bucket: str = "storyboards") -> str:
-    """把 Streamlit 上传的文件存进 MinIO，返回可访问 URL。"""
-    client = minio_client()
-    suffix = os.path.splitext(uploaded_file.name)[1] or ".png"
-    object_name = f"uploads/{datetime.now():%Y%m%d_%H%M%S}_{uploaded_file.name}"
-    data = uploaded_file.getvalue()
+    """把 Streamlit 上传的文件存进 MinIO，返回可访问 URL。
+
+    安全加固（P2-1）：
+      - 用 uuid 重命名，不信任客户端文件名（防路径穿越/对象名注入）
+      - 校验后缀在白名单内
+      - 限制大小（默认 20MB）
+    """
     import io
+    import uuid
+    raw_name = str(getattr(uploaded_file, "name", ""))
+    suffix = os.path.splitext(raw_name)[1].lower()
+    if suffix not in _ALLOWED_IMG_SUFFIXES:
+        raise ValueError(f"不支持的图片格式 {suffix or '(无后缀)'}，仅支持 {sorted(_ALLOWED_IMG_SUFFIXES)}")
+    data = uploaded_file.getvalue()
+    if len(data) > _MAX_IMG_BYTES:
+        raise ValueError(f"图片过大（{len(data)/1024/1024:.1f}MB），上限 {_MAX_IMG_BYTES/1024/1024:.0f}MB")
+    # uuid 重命名，保留合法后缀，杜绝文件名注入
+    object_name = f"uploads/{datetime.now():%Y%m%d}/{uuid.uuid4().hex}{suffix}"
+    client = minio_client()
     client.put_object(bucket, object_name, io.BytesIO(data),
                       length=len(data), content_type=uploaded_file.type or "image/png")
     # 内网直链（MinIO 桶需设为可读，或用预签名）
@@ -145,10 +161,6 @@ if mode.startswith("📝"):
     with col_b:
         model = st.text_input("指定模型（留空按重要级默认）", value="")
 
-    project = st.text_input("项目名（归档用）", value="")
-    episode = st.text_input("集（归档用）", value="")
-    shot_no = st.text_input("镜头号（归档用）", value="")
-
     if st.button("🚀 提交生成", type="primary"):
         if not prompt:
             st.error("请填写提示词")
@@ -178,9 +190,16 @@ if mode.startswith("📝"):
                 status.update(label=f"图片上传失败：{e}", state="error")
                 st.stop()
 
-        mode_desc = ("文生视频" if not images_payload else
-                     "首尾帧" if len(images_payload) == 2 else
-                     "首帧" if len(images_payload) == 1 else "多参考图")
+        # 模式判定基于 role 组合，而非图片数量（避免 1 张参考图被误判为首帧）
+        roles = {img["role"] for img in images_payload}
+        if not images_payload:
+            mode_desc = "文生视频"
+        elif roles == {"first_frame", "last_frame"}:
+            mode_desc = "首尾帧"
+        elif "first_frame" in roles and "last_frame" not in roles and len(images_payload) == 1:
+            mode_desc = "首帧"
+        else:
+            mode_desc = "多参考图" + ("（含首尾帧）" if roles >= {"first_frame", "last_frame"} else "")
         st.info(f"模式：{mode_desc}　路由分组：{PRIORITY_TO_GROUP[priority]}")
 
         with st.spinner("生成中（约 1-3 分钟，请勿关闭页面）…"):
@@ -191,7 +210,8 @@ if mode.startswith("📝"):
         if res.get("video_url"):
             st.success("✅ 生成成功！")
             st.video(res["video_url"])
-            st.caption(f"成片链接（有时效，已自动归档到 MinIO）：{res['video_url']}")
+            # 注意：成片链接来自方舟，有时效（通常几小时～1天），需及时下载保存
+            st.caption(f"成片链接（方舟直链，有时效请及时下载保存）：{res['video_url']}")
         else:
             st.error(f"❌ 生成失败：{res.get('error')}")
 

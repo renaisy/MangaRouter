@@ -167,4 +167,9 @@ class VolcClient:
     def _parse(resp: httpx.Response) -> dict[str, Any]:
         if resp.status_code >= 400:
             raise VolcError(f"方舟返回 HTTP {resp.status_code}: {resp.text}")
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as e:
+            # 2xx 但非 JSON（如某些网关返回 HTML 错误页），包装成 VolcError 而非冒泡成 500
+            body_preview = resp.text[:200] if resp.text else "(空)"
+            raise VolcError(f"方舟返回非 JSON 响应（{resp.headers.get('content-type')}）：{body_preview}") from e

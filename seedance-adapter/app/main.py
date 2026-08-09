@@ -59,10 +59,10 @@ def client() -> VolcClient:
 # 请求 / 响应模型
 # --------------------------------------------------------------------------- #
 class ImageItem(BaseModel):
-    """一张输入图片。role 决定模式：first_frame/last_frame/reference_image。"""
+    """一张输入图片。role 用枚举，pydantic 自动对非法值返回 422 而非 500。"""
     url: str = Field(..., description="图片 URL")
-    role: str = Field(
-        ImageRole.REFERENCE_IMAGE.value,
+    role: ImageRole = Field(
+        ImageRole.REFERENCE_IMAGE,
         description="图片角色：first_frame(首帧) / last_frame(尾帧) / reference_image(参考图)",
     )
 
@@ -91,7 +91,7 @@ def _to_image_inputs(items: list[ImageItem] | None) -> list[ImageInput] | None:
     """把 Pydantic 模型转成客户端用的 ImageInput。"""
     if not items:
         return None
-    return [ImageInput(url=it.url, role=ImageRole(it.role)) for it in items]
+    return [ImageInput(url=it.url, role=it.role) for it in items]
 
 
 @app.post("/v1/videos", response_model=TaskIdResponse)

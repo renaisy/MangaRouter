@@ -3,9 +3,9 @@
 > 漫剧团队的 **Seedance 智能路由 + 本地/云端协同** 一体化方案。
 > 全部基于开源项目 + 极少量定制开发，专为非开发背景团队设计。
 
-[![版本](https://img.shields.io/badge/version-0.3.0-blue)](./CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.3.1-blue)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
-[![测试](https://img.shields.io/badge/tests-19%20passed-brightgreen)](#-测试)
+[![测试](https://img.shields.io/badge/tests-23%20passed-brightgreen)](#-测试)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./docs/迭代计划.md#七版本节奏)
 
 **v0.3 现状**：智能路由 ✅ · 首尾帧/多参考图 ✅ · 角色一致性 ✅ · 成本看板 ✅ · ComfyUI 集成 ✅ · 分布式协同 ✅
@@ -166,9 +166,9 @@ seedance-hub/
 
 ```bash
 cd seedance-adapter && python -m pytest      # 9 个用例
-cd cost-sync && python -m pytest             # 10 个用例
+cd cost-sync && python -m pytest             # 14 个用例
 ```
-合计 19 个单元测试，覆盖适配器多图能力、配额换算、聚合逻辑、幂等写入、时间范围边界。
+合计 23 个单元测试，覆盖适配器多图能力、配额换算、聚合逻辑、幂等写入、where 转义、时间范围边界。
 
 ---
 

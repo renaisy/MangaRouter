@@ -15,7 +15,8 @@ from functools import lru_cache
 
 
 def _env(key: str, default: str = "") -> str:
-    return os.environ.get(key, "").strip()
+    # 注意：必须把 default 透传给 os.environ.get，否则默认值失效
+    return os.environ.get(key, default).strip()
 
 
 @dataclass(frozen=True)

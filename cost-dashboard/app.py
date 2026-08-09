@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 from datetime import date, timedelta
-from urllib.parse import quote
 
 import httpx
 import pandas as pd
@@ -45,23 +44,32 @@ with st.sidebar:
 
 
 @st.cache_data(ttl=300)
-def fetch_costs(_base: str, _token: str, _table_id: str) -> pd.DataFrame:
-    """从 NocoDB Costs 表拉全量记录，返回 DataFrame。"""
-    if not (_token and _table_id):
+def fetch_costs(base: str, token: str, table_id: str) -> pd.DataFrame:
+    """从 NocoDB Costs 表拉全量记录，返回 DataFrame。
+
+    注意：参数不要加下划线前缀（_base/_token/_table_id）——Streamlit 的 cache_data
+    约定 _ 开头的参数不参与缓存键，会导致用户改了地址/token 后看板不刷新。
+    """
+    if not (token and table_id):
         return pd.DataFrame()
-    headers = {"xc-token": _token}
+    headers = {"xc-token": token}
     all_rows: list[dict] = []
     offset = 0
     while True:
-        url = f"{_base}/api/v2/tables/{_table_id}/records"
-        r = httpx.get(url, headers=headers, params={"limit": 100, "offset": offset}, timeout=30)
-        r.raise_for_status()
+        url = f"{base}/api/v2/tables/{table_id}/records"
+        try:
+            r = httpx.get(url, headers=headers, params={"limit": 100, "offset": offset}, timeout=30)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # 401/404 等：友好提示而非整页 traceback
+            raise RuntimeError(f"NocoDB 请求失败 HTTP {e.response.status_code}：请检查 Token 和表 ID") from e
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"无法连接 NocoDB（{base}）：{e}") from e
         data = r.json() or {}
         rows = data.get("list") or []
         if not rows:
             break
         all_rows.extend(rows)
-        # NocoDB v2 用 offset/limit 或 pageInfo；无更多则停
         if len(rows) < 100:
             break
         offset += 100
@@ -87,7 +95,11 @@ def safe_filter(df: pd.DataFrame, start, end) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # 拉数据
 # --------------------------------------------------------------------------- #
-df_all = fetch_costs(base, token, table_id)
+try:
+    df_all = fetch_costs(base, token, table_id)
+except RuntimeError as e:
+    st.error(f"读取成本数据失败：{e}")
+    st.stop()
 
 if df_all.empty:
     st.warning("未读到数据。请先：①在侧边栏填好 NocoDB Token 和 Costs 表 ID；"

@@ -25,6 +25,20 @@ import httpx
 QUOTA_PER_YUAN = 500_000  # New-API 默认 1 元 = 500000 配额（QuotaPerUnit），按实际改
 
 
+def _to_int(v: Any, default: int = 0) -> int:
+    """安全转 int：处理 None、空串、非数值字符串、bool 等边界情况。
+
+    API 返回 JSON 的显式 null 会让 dict.get 返回 None，直接 int() 会 TypeError；
+    布尔值 True 会被 int() 当成 1。这里统一兜底。
+    """
+    if v is None or isinstance(v, bool):
+        return default
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class LogEntry:
     log_id: int
@@ -94,21 +108,24 @@ class NewAPIClient:
             if not items:
                 return
             for it in items:
+                # 显式 null（JSON 的 null）会让 dict.get 返回 None，int(None) 崩溃。
+                # _to_int 统一兜底：None/非数值都返回默认值，避免单条脏数据让整页失败。
+                quota_val = _to_int(it.get("quota"))
                 yield LogEntry(
-                    log_id=int(it.get("id", 0)),
-                    created_at=int(it.get("created_at", 0)),
-                    model_name=str(it.get("model_name", "")),
-                    channel_id=int(it.get("channel_id", 0)),
-                    channel_name=str(it.get("channel_name", "")),
-                    token_name=str(it.get("token_name", "")),
-                    group=str(it.get("group", "")),
-                    quota=int(it.get("quota", 0)),
-                    amount_yuan=self.quota_to_yuan(it.get("quota", 0)),
-                    prompt_tokens=int(it.get("prompt_tokens", 0)),
-                    completion_tokens=int(it.get("completion_tokens", 0)),
+                    log_id=_to_int(it.get("id")),
+                    created_at=_to_int(it.get("created_at")),
+                    model_name=str(it.get("model_name") or ""),
+                    channel_id=_to_int(it.get("channel_id")),
+                    channel_name=str(it.get("channel_name") or ""),
+                    token_name=str(it.get("token_name") or ""),
+                    group=str(it.get("group") or ""),
+                    quota=quota_val,
+                    amount_yuan=self.quota_to_yuan(quota_val),
+                    prompt_tokens=_to_int(it.get("prompt_tokens")),
+                    completion_tokens=_to_int(it.get("completion_tokens")),
                 )
             # 下一页
-            total = int(data.get("total", 0))
+            total = _to_int(data.get("total"))
             if page * page_size >= total:
                 return
             page += 1

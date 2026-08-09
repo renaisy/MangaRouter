@@ -62,33 +62,52 @@ class ComfyUIBridge:
     # ----------------------- 轮询结果 -----------------------
     def wait_result(self, prompt_id: str, max_seconds: int = 900,
                     interval: int = 5) -> dict[str, Any]:
-        """轮询直到工作流完成，返回 history 里该 prompt 的输出。"""
+        """轮询直到工作流完成，返回 history 里该 prompt 的输出。
+
+        注意：ComfyUI 出错时 status.completed 仍可能是 true，必须额外检查
+        status.status_str == "success"，否则会把失败当成功返回空输出。
+        """
         deadline = time.time() + max_seconds
         while time.time() < deadline:
             r = self._client.get(f"{self.base_url}/history/{prompt_id}")
             if r.status_code == 200:
                 data = r.json()
-                # 完成后 history 里会有这个 prompt_id 的条目
                 entry = data.get(prompt_id)
                 if entry and entry.get("status", {}).get("completed"):
+                    status_obj = entry.get("status", {})
+                    status_str = str(status_obj.get("status_str", "")).lower()
+                    if status_str == "error":
+                        # 从 messages 里提取错误详情，否则只报笼统失败
+                        msgs = status_obj.get("messages", [])
+                        err_detail = "；".join(
+                            str(m.get("data", {}).get("error_message", m))
+                            for m in msgs if isinstance(m, dict)
+                        ) or "ComfyUI 未提供详细错误"
+                        raise ComfyUIError(f"工作流 {prompt_id} 执行失败：{err_detail}")
                     return entry
             time.sleep(interval)
         raise ComfyUIError(f"工作流 {prompt_id} 超时（>{max_seconds}s）")
 
     def output_urls(self, history_entry: dict[str, Any]) -> list[str]:
-        """从 history 条目里提取输出文件的相对路径，拼成可访问 URL。"""
+        """从 history 条目里提取输出文件，拼成可访问 URL（含 URL 编码）。"""
+        from urllib.parse import quote
         urls: list[str] = []
         outputs = history_entry.get("outputs", {})
         for node_out in outputs.values():
-            # 视频输出常见字段：gifs/videos/images
             for key in ("gifs", "videos", "images"):
                 for item in (node_out.get(key) or []):
                     fname = item.get("filename")
                     subfolder = item.get("subfolder", "")
                     ftype = item.get("type", "output")
                     if fname:
-                        path = f"{subfolder}/{fname}" if subfolder else fname
-                        urls.append(f"{self.base_url}/view?filename={path}&type={ftype}")
+                        # filename/subfolder 可能含中文、空格、& 等，必须分别编码
+                        # 否则 & 会被当成 query 参数分隔符，URL 损坏
+                        fname_enc = quote(str(fname), safe="")
+                        subfolder_enc = quote(str(subfolder), safe="")
+                        urls.append(
+                            f"{self.base_url}/view?filename={fname_enc}"
+                            f"&subfolder={subfolder_enc}&type={ftype}"
+                        )
         return urls
 
 

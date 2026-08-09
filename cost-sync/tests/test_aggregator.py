@@ -134,6 +134,50 @@ def test_upsert_updates_when_exists():
     # 应该 patch 而不是 post
     assert w._client.patch.call_count == 1
     assert w._client.post.call_count == 0
-    # 确认带上了已有 Id
-    sent = w._client.patch.call_args.kwargs["json"]
-    assert sent["Id"] == 42
+    # v0.3.1：Id 走 path 参数（PATCH .../records/{id}），不在 body 里
+    patch_url = w._client.patch.call_args.args[0]
+    assert "/records/42" in patch_url
+
+
+def test_find_existing_where_includes_group():
+    """去重键必须含 Group，否则不同分组互相覆盖（P0-2 回归保护）。"""
+    w = NocoDBWriter.__new__(NocoDBWriter)
+    w.base_url = "http://x"
+    w.table_id = "mt_test"
+    w._client = MagicMock()
+    w._client.get.return_value = MagicMock(json=lambda: {"list": []},
+                                           raise_for_status=lambda: None)
+
+    w._find_existing("2026-08-08", "张三", "m1", "ch1", "final")
+    sent_params = w._client.get.call_args.kwargs["params"]
+    assert "Group" in sent_params["where"], "where 子句必须包含 Group 去重键"
+
+
+def test_where_value_escaping():
+    """where 值里的特殊字符必须被引号包裹转义（P0-2 注入修复）。"""
+    from nocodb_writer import _escape_where_value
+    assert _escape_where_value("standard") == "'standard'"
+    escaped = _escape_where_value("火山官方,fast")
+    assert escaped.startswith("'") and escaped.endswith("'")
+    assert "," in escaped  # 原始逗号保留，但被引号包裹成字面量
+    assert _escape_where_value("a'b") == "'a''b'"  # 单引号 SQL 风格转义
+
+
+def test_upsert_many_counts_failures():
+    """失败行必须计入 failed，供调用方告警（P2-6 修复）。"""
+    w = NocoDBWriter.__new__(NocoDBWriter)
+    w.base_url = "http://x"
+    w.table_id = "mt_test"
+    w._client = MagicMock()
+    w._client.get.return_value = MagicMock(json=lambda: {"list": []})
+    w._client.post.side_effect = RuntimeError("boom")
+
+    from aggregator import AggValue
+    items = [
+        (AggKey("2026-08-08", "张三", "m1", "ch1", "standard"), AggValue(calls=1)),
+        (AggKey("2026-08-08", "李四", "m2", "ch1", "draft"), AggValue(calls=1)),
+    ]
+    stats = w.upsert_many(items)
+    assert stats["failed"] == 2
+    assert stats["inserted"] == 0
+    assert stats["updated"] == 0

@@ -6,7 +6,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY app.py comfyui_bridge.py ./
+COPY templates ./templates
+
+# 非 root 运行（安全加固）
+RUN useradd -r -u 1000 app && chown -R app /app
+USER app
 
 EXPOSE 18501
 

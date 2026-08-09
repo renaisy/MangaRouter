@@ -1,0 +1,39 @@
+# 防止密钥、缓存、测试、数据等进入镜像层
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# 运行时数据
+data/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 测试（生产镜像不需要）
+tests/
+pytest.ini
+**/tests/
+
+# Git / IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+.zcode/
+
+# 构建产物
+*.egg-info/
+build/
+dist/
+
+# 文档（按需，镜像运行不需要）
+docs/
+*.md
+!requirements.txt
