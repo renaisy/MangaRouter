@@ -3,6 +3,9 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+> 下一步计划见 [`docs/迭代计划.md`](docs/迭代计划.md) 的"近期迭代"章节，
+> 当前焦点是 submit-tool 异步化（P1-1）。
+
 ---
 
 ## [0.3.3] - 2026-08-09
