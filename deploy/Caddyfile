@@ -1,0 +1,49 @@
+# MangaRouter 腾讯云 VPS 反代（Caddy）—— 子域名 + 基础鉴权
+#
+# DNS：api / collab / submit / dash / s3 → VPS 公网 IP
+# MinIO 控制台默认不对公网开放（请用 SSH 隧道：ssh -L 19001:127.0.0.1:19001 vps）
+#
+# 生成 basicauth 哈希：caddy hash-password
+# 把下面 basicauth 的 hash 换成真实值，用户名可改
+
+{
+	email admin@your.domain
+}
+
+api.your.domain {
+	reverse_proxy 127.0.0.1:13000
+}
+
+collab.your.domain {
+	reverse_proxy 127.0.0.1:18080
+}
+
+# 提交工具：必须加鉴权（Streamlit 本身无登录）
+submit.your.domain {
+	basicauth {
+		# 用户 哈希  ← 执行: caddy hash-password
+		team $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD
+	}
+	reverse_proxy 127.0.0.1:18501
+}
+
+# 成本看板：必须加鉴权（含 NocoDB 只读 Token 能力）
+dash.your.domain {
+	basicauth {
+		team $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD
+	}
+	reverse_proxy 127.0.0.1:18502
+}
+
+# MinIO S3 API（方舟拉预签名图）。桶保持 private。
+s3.your.domain {
+	reverse_proxy 127.0.0.1:19000
+}
+
+# 控制台：默认注释。需要时仅经 VPN/SSH 隧道访问 127.0.0.1:19001
+# minio.your.domain {
+# 	basicauth {
+# 		admin $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD
+# 	}
+# 	reverse_proxy 127.0.0.1:19001
+# }

@@ -1,52 +1,52 @@
-# 分镜批量提交小工具
+# 分镜提交小工具
 
-把 NocoDB 分镜表里的待提交行，按重要级自动路由到对应价格/质量分组的 Seedance 渠道，
-成片下载后归档到 MinIO，并把状态回填到 NocoDB。
+经 **New-API** 按重要级路由到 Seedance 渠道；图片上传 MinIO 后使用**公网预签名 URL** 供方舟拉取；
+任务异步入队，由 `submit-worker` 轮询完成后归档到 MinIO 并回填 NocoDB。
 
 ## 运行方式
 
-### 方式一：本地直接跑（开发/调试）
+### Docker（推荐，见仓库根 compose）
+```bash
+docker compose up -d submit-tool submit-worker
+# 访问：https://submit.your.domain （经 Caddy）
+```
+
+### 本地调试
 ```bash
 cd submit-tool
 pip install -r requirements.txt
-
-# 配置环境（指向你的中央节点）
-export SUBMIT_NEWAPI_BASE_URL=http://192.168.1.50:13000
-export SUBMIT_NEWAPI_TOKEN=<New-API 令牌>
-export NOCODB_BASE_URL=http://192.168.1.50:18080
-export NOCODB_TOKEN=<NocoDB API Token>
-export SUBMIT_MINIO_ENDPOINT=192.168.1.50:19000
+export SUBMIT_NEWAPI_BASE_URL=http://127.0.0.1:13000
+export SUBMIT_NEWAPI_TOKEN=<令牌>
+export NOCODB_BASE_URL=http://127.0.0.1:18080
+export NOCODB_TOKEN=<token>
+export STORYBOARDS_TABLE_ID=<mt_xxx>
+export SUBMIT_MINIO_ENDPOINT=127.0.0.1:19000
 export SUBMIT_MINIO_ACCESS_KEY=seedance-admin
-export SUBMIT_MINIO_SECRET_KEY=<MinIO 密码>
-export ADAPTER_URL=http://192.168.1.50:18008   # 若 New-API 未原生支持 Seedance
-
+export SUBMIT_MINIO_SECRET_KEY=<密码>
+export SUBMIT_MINIO_PUBLIC_ENDPOINT=s3.your.domain
+export SUBMIT_MINIO_PUBLIC_SECURE=true
 streamlit run app.py
-```
-浏览器打开 http://localhost:8501
-
-### 方式二：Docker
-```bash
-docker build -t seedance-submit .
-docker run -d --name seedance-submit -p 18501:18501 \
-  --env-file ../.env \
-  seedance-submit
+# 另开终端：python worker.py
 ```
 
 ## 使用步骤
 
-1. 在侧边栏填好 New-API / NocoDB / MinIO 的连接信息
-2. 在 NocoDB 里创建好分镜表（结构见 `nocodb-init/schema.sql`）
-3. 把分镜的 `Status` 字段填为 `pending`，填好 `Prompt` 和 `Priority`
-4. 在本工具里输入「NocoDB 分镜表 ID」（在 NocoDB 表格 URL 里，形如 `mt_xxxxx`）
-5. 点击「刷新待提交分镜」→ 选择 → 「批量提交所选分镜」
-6. 提交完成后，NocoDB 里的 `Status` 会变成 `succeeded`，`MinioPath` 指向成片
+1. 环境变量或侧边栏（管理员展开区）配置 New-API / NocoDB / 表 ID
+2. 用 `nocodb-init/init_schema.py` 建好 Storyboards（含 TaskId / ShareUrl / ErrorMsg）
+3. **批量**：分镜 `Status=pending` → 「NocoDB 批量提交」勾选提交
+4. **单条**：标准提交填提示词/图 → 异步提交
+5. worker 将 `running` → `succeeded`，写入 `VideoUrl` / `MinioPath` / `ShareUrl`
 
-## 重要级路由映射
+## 重要级路由
 
-| Priority（NocoDB） | New-API 分组 | 默认模型 | 用途 |
-|------------------|------------|---------|-----|
-| 草稿 draft       | `draft`    | Seedance 2.0-mini | 快速试提示词，最便宜 |
-| 日常 standard    | `standard` | Seedance 2.0-fast | 性价比主力 |
-| 成片 final       | `final`    | Seedance 2.0      | 质量优先 |
+| Priority | New-API 分组 | 默认模型 |
+|----------|-------------|---------|
+| 草稿 | `draft` | Seedance 2.0-mini |
+| 日常 | `standard` | Seedance 2.0-fast |
+| 成片 | `final` | Seedance 2.0 |
 
-> 也可在分镜行里填 `Model` 字段强制指定模型，覆盖上面的默认值。
+通过 `X-New-Api-Group` +（可选）分档令牌 `SUBMIT_TOKEN_*` 选择分组；**不会**把 group 塞进方舟 `extra_params`。
+
+## ComfyUI 专业模式
+
+模板目录 `templates/` 内为骨架，需专家导出真实 API JSON 替换后方可生产使用。

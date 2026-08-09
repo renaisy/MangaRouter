@@ -34,8 +34,12 @@ set -e\n\
 mkdir -p /tmp/cost-sync\n\
 if [ "$COST_SYNC_ON_STARTUP" = "true" ]; then\n\
   echo "[$(date)] 启动时立即执行一次同步…"\n\
-  python sync.py $COST_SYNC_ARGS > /tmp/cost-sync/last_run.log 2>&1 || echo "[$(date)] 启动同步失败（见日志）" >> /tmp/cost-sync/last_run.log\n\
-  date +%s > /tmp/cost-sync/last_success_ts\n\
+  if python sync.py $COST_SYNC_ARGS > /tmp/cost-sync/last_run.log 2>&1; then\n\
+    date +%s > /tmp/cost-sync/last_success_ts\n\
+    echo "[$(date)] 启动同步成功" >> /tmp/cost-sync/last_run.log\n\
+  else\n\
+    echo "[$(date)] 启动同步失败（见上方日志）" >> /tmp/cost-sync/last_run.log\n\
+  fi\n\
 fi\n\
 echo "[$(date)] 进入循环：每 $COST_SYNC_INTERVAL_HOURS 小时同步一次"\n\
 while true; do\n\

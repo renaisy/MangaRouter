@@ -3,8 +3,47 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-> 下一步计划见 [`docs/迭代计划.md`](docs/迭代计划.md) 的"近期迭代"章节，
-> 当前焦点是 submit-tool 异步化（P1-1）。
+> 路线图见 [`docs/迭代计划.md`](docs/迭代计划.md)。安全红线见 [`docs/安全审查.md`](docs/安全审查.md) / [`docs/RULES.md`](docs/RULES.md)。主部署为腾讯云 VPS。
+
+---
+
+## [0.4.1] - 2026-08-09
+
+### 对抗性安全热修（公网 VPS）
+
+- **Streamlit**：submit / dash 不再把 Token、Base URL 预填或允许页面篡改（防密钥泄露与 SSRF）
+- **Caddy**：`submit`/`dash` 增加 `basicauth` 模板；MinIO 控制台默认不对公网
+- **adapter**：`ADAPTER_REQUIRE_AUTH=true` 时未配置 token 拒绝服务；`extra_params` 白名单
+- **归档/ImageUrl**：https + Host 白名单、成片体积上限、object_prefix 消毒；删除预签名 Host 改写兜底
+- **文档**：新增 `docs/安全审查.md`、`docs/RULES.md`
+
+### 测试
+- submit-tool 安全单测扩展；全量 pytest 回归
+
+---
+
+## [0.4.0] - 2026-08-09
+
+### PDCA 合入：腾讯云 VPS 主部署 + 异步协作闭环
+
+#### C1 部署与 P0
+- **腾讯云 VPS**：新增 `deploy/Caddyfile`、`vps-setup.sh`、`backup.sh`、nginx 临时示例
+- **compose**：submit 走 `http://new-api:3000`；新增 `submit-worker`；去掉直连 adapter 的 `ADAPTER_URL`
+- **预签名图传**：MinIO 私有桶 + 公网 `SUBMIT_MINIO_PUBLIC_ENDPOINT` 预签名 URL
+- **adapter 鉴权**：`ADAPTER_API_TOKEN` Bearer；`/health` 仍公开
+- **cost-sync**：仅同步成功时写 `last_success_ts`
+- **ComfyUI**：修复 `_upload_to_comfyui` NameError；上传使用 uuid 文件名
+
+#### C2/C3 提交闭环
+- NocoDB 批量 pending → 异步 TaskId + running；worker 归档并回填 ShareUrl/MinioPath/ErrorMsg
+- 可选 `REVIEW_WEBHOOK_URL`；Storyboards 字段扩展（含 ProjectKey）
+
+#### C4 质量
+- cost-dashboard 边界处理；`COST_QUOTA_PER_YUAN`；GitHub Actions CI；备份脚本
+- 重写部署指南 / 操作手册 / README / 迭代计划
+
+### 测试
+- 新增 adapter 鉴权与 submit-tool 单测；原有套件回归
 
 ---
 

@@ -18,22 +18,38 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-NOCODB_BASE_URL = os.environ.get("DASH_NOCODB_BASE_URL", "http://localhost:18080").rstrip("/")
+NOCODB_BASE_URL = os.environ.get("DASH_NOCODB_BASE_URL", "http://nocodb:8080").rstrip("/")
 NOCODB_TOKEN = os.environ.get("DASH_NOCODB_TOKEN", "")
 COSTS_TABLE_ID = os.environ.get("DASH_COSTS_TABLE_ID", "")
+_MAX_PAGES = int(os.environ.get("DASH_MAX_PAGES", "200"))
+
+import re
+_TABLE_ID_RE = re.compile(r"^m[A-Za-z0-9_]+$")
+
+
+def _valid_table_id(tid: str) -> bool:
+    return bool(tid) and bool(_TABLE_ID_RE.match(tid))
+
 
 st.set_page_config(page_title="Seedance 成本看板", page_icon="💰", layout="wide")
 st.title("💰 Seedance 成本看板")
 
 
 # --------------------------------------------------------------------------- #
-# 侧边栏配置
+# 侧边栏：仅展示只读连接状态（密钥不进浏览器）
 # --------------------------------------------------------------------------- #
+base = NOCODB_BASE_URL
+token = NOCODB_TOKEN
+table_id = COSTS_TABLE_ID
+
 with st.sidebar:
-    st.header("数据源")
-    base = st.text_input("NocoDB 地址", value=NOCODB_BASE_URL)
-    token = st.text_input("NocoDB Token", value=NOCODB_TOKEN, type="password")
-    table_id = st.text_input("Costs 表 ID", value=COSTS_TABLE_ID)
+    st.header("数据源（环境变量）")
+    st.caption("地址与 Token 仅来自服务器环境，页面不可修改。公网请加 Caddy basicauth。")
+    st.text(f"NocoDB: {base}")
+    st.text(f"表 ID: {table_id or '(未配置)'}")
+    st.text(f"Token: {'已配置' if token else '未配置'}")
+    if table_id and not _valid_table_id(table_id):
+        st.warning("表 ID 格式异常（期望类似 mt_xxxxx）")
 
     st.divider()
     st.subheader("筛选")
@@ -52,10 +68,16 @@ def fetch_costs(base: str, token: str, table_id: str) -> pd.DataFrame:
     """
     if not (token and table_id):
         return pd.DataFrame()
+    if not _valid_table_id(table_id):
+        raise RuntimeError(f"非法 Costs 表 ID：{table_id}")
     headers = {"xc-token": token}
     all_rows: list[dict] = []
     offset = 0
+    page = 0
     while True:
+        page += 1
+        if page > _MAX_PAGES:
+            break
         url = f"{base}/api/v2/tables/{table_id}/records"
         try:
             r = httpx.get(url, headers=headers, params={"limit": 100, "offset": offset}, timeout=30)
@@ -81,13 +103,17 @@ def fetch_costs(base: str, token: str, table_id: str) -> pd.DataFrame:
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     for col in ("Amount", "Calls", "Tokens"):
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            # 保留 NaN，不强制填 0，避免拉低均值；聚合时 skipna
+            df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
 
 def safe_filter(df: pd.DataFrame, start, end) -> pd.DataFrame:
-    if df.empty or "Date" not in df.columns:
+    if df.empty:
         return df
+    if "Date" not in df.columns:
+        st.warning("Costs 表缺少 Date 列，无法按日期筛选")
+        return df.iloc[0:0].copy()
     mask = (df["Date"].dt.date >= start) & (df["Date"].dt.date <= end)
     return df[mask].copy()
 
@@ -183,11 +209,14 @@ with col_c:
     st.subheader("🎯 三档分组占比")
     if "Group" in df.columns and df["Group"].notna().any():
         by_grp = df.groupby("Group")["Amount"].sum()
-        # 确保三档都显示
+        # 确保三档都显示，同时保留其它自定义分组
         for g in ("draft", "standard", "final"):
             if g not in by_grp.index:
                 by_grp[g] = 0
-        by_grp = by_grp[["draft", "standard", "final"]]
+        # 三档优先排前面，其余跟后
+        ordered = [g for g in ("draft", "standard", "final") if g in by_grp.index]
+        ordered += [g for g in by_grp.index if g not in ordered]
+        by_grp = by_grp[ordered]
         st.bar_chart(by_grp)
         st.caption("draft=草稿(便宜) / standard=日常 / final=成片(贵)。"
                    "final 占比高说明可能存在滥用高质档试错。")

@@ -183,11 +183,17 @@ services:
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
       mc mb -p local/projects   || true;
       mc mb -p local/storyboards || true;
       mc mb -p local/outputs    || true;
       mc mb -p local/assets     || true;
-      echo 'Buckets created: projects, storyboards, outputs, assets';
+      # 私有桶：禁止匿名读写，方舟拉图走预签名 URL
+      mc anonymous set none local/projects || true;
+      mc anonymous set none local/storyboards || true;
+      mc anonymous set none local/outputs || true;
+      mc anonymous set none local/assets || true;
+      echo 'Buckets created (private): projects, storyboards, outputs, assets';
       "
     restart: "no"
 
@@ -248,13 +254,12 @@ services:
     image: seedance-adapter
     container_name: seedance-adapter
     restart: always
-    depends_on:
-      new-api:
-        condition: service_healthy
     environment:
       TZ: Asia/Shanghai
       VOLC_API_KEY: "${VOLC_API_KEY}"
       VOLC_BASE_URL: "${VOLC_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}"
+      ADAPTER_API_TOKEN: "${ADAPTER_API_TOKEN}"
+      ADAPTER_REQUIRE_AUTH: "${ADAPTER_REQUIRE_AUTH:-true}"
       ADAPTER_PORT: "18008"
     ports:
       - "127.0.0.1:${ADAPTER_PORT}:18008"
@@ -266,8 +271,9 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
-  # 分镜提交工具：标准模式(首尾帧/多参考图) + ComfyUI 专业模式
-  # 访问：http://<ip>:${SUBMIT_TOOL_PORT}
+  # 分镜提交工具：标准模式 + NocoDB 批量 + ComfyUI 专业模式
+  # 访问：经 Caddy submit.your.domain → 127.0.0.1:${SUBMIT_TOOL_PORT}
+  # 路由：submit → New-API →（渠道）seedance-adapter → 方舟
   # ---------------------------------------------------------------------------
   submit-tool:
     build: ./submit-tool
@@ -281,19 +287,61 @@ services:
         condition: service_healthy
     environment:
       TZ: Asia/Shanghai
-      # 容器内用服务名访问同网络的服务
-      SUBMIT_NEWAPI_BASE_URL: "http://seedance-adapter:18008"
+      SUBMIT_NEWAPI_BASE_URL: "http://new-api:3000"
       SUBMIT_NEWAPI_TOKEN: "${SUBMIT_NEWAPI_TOKEN}"
+      SUBMIT_TOKEN_DRAFT: "${SUBMIT_TOKEN_DRAFT:-}"
+      SUBMIT_TOKEN_STANDARD: "${SUBMIT_TOKEN_STANDARD:-}"
+      SUBMIT_TOKEN_FINAL: "${SUBMIT_TOKEN_FINAL:-}"
       NOCODB_BASE_URL: "http://nocodb:8080"
       NOCODB_TOKEN: "${NOCODB_TOKEN}"
+      STORYBOARDS_TABLE_ID: "${STORYBOARDS_TABLE_ID:-}"
       SUBMIT_MINIO_ENDPOINT: "minio:9000"
       SUBMIT_MINIO_ACCESS_KEY: "${MINIO_ROOT_USER}"
       SUBMIT_MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
       SUBMIT_MINIO_SECURE: "false"
-      ADAPTER_URL: "http://seedance-adapter:18008"
-      COMFYUI_BASE_URL: "${COMFYUI_BASE_URL:-http://localhost:8188}"
+      SUBMIT_MINIO_PUBLIC_ENDPOINT: "${SUBMIT_MINIO_PUBLIC_ENDPOINT}"
+      SUBMIT_MINIO_PUBLIC_SECURE: "${SUBMIT_MINIO_PUBLIC_SECURE:-true}"
+      SUBMIT_MINIO_PRESIGN_SECONDS: "${SUBMIT_MINIO_PRESIGN_SECONDS:-7200}"
+      COMFYUI_BASE_URL: "${COMFYUI_BASE_URL:-}"
+      REVIEW_WEBHOOK_URL: "${REVIEW_WEBHOOK_URL:-}"
+      # 异步 worker：与 Streamlit 同镜像，另起进程扫 running 任务
+      SUBMIT_WORKER_ENABLED: "${SUBMIT_WORKER_ENABLED:-true}"
     ports:
       - "127.0.0.1:${SUBMIT_TOOL_PORT}:18501"
+
+  # 后台补状态 worker（关浏览器后仍回填 NocoDB / 归档）
+  submit-worker:
+    build: ./submit-tool
+    image: seedance-submit-tool
+    container_name: seedance-submit-worker
+    restart: always
+    depends_on:
+      new-api:
+        condition: service_healthy
+      nocodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      SUBMIT_NEWAPI_BASE_URL: "http://new-api:3000"
+      SUBMIT_NEWAPI_TOKEN: "${SUBMIT_NEWAPI_TOKEN}"
+      SUBMIT_TOKEN_DRAFT: "${SUBMIT_TOKEN_DRAFT:-}"
+      SUBMIT_TOKEN_STANDARD: "${SUBMIT_TOKEN_STANDARD:-}"
+      SUBMIT_TOKEN_FINAL: "${SUBMIT_TOKEN_FINAL:-}"
+      NOCODB_BASE_URL: "http://nocodb:8080"
+      NOCODB_TOKEN: "${NOCODB_TOKEN}"
+      STORYBOARDS_TABLE_ID: "${STORYBOARDS_TABLE_ID:-}"
+      SUBMIT_MINIO_ENDPOINT: "minio:9000"
+      SUBMIT_MINIO_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      SUBMIT_MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
+      SUBMIT_MINIO_SECURE: "false"
+      SUBMIT_MINIO_PUBLIC_ENDPOINT: "${SUBMIT_MINIO_PUBLIC_ENDPOINT}"
+      SUBMIT_MINIO_PUBLIC_SECURE: "${SUBMIT_MINIO_PUBLIC_SECURE:-true}"
+      SUBMIT_MINIO_PRESIGN_SECONDS: "${SUBMIT_MINIO_PRESIGN_SECONDS:-7200}"
+      REVIEW_WEBHOOK_URL: "${REVIEW_WEBHOOK_URL:-}"
+      WORKER_POLL_SECONDS: "${WORKER_POLL_SECONDS:-15}"
+    command: ["python", "worker.py"]
 
 # =============================================================================
 # 网络：所有服务在同一自定义网络内，用服务名（如 new-api/nocodb/minio）互通。

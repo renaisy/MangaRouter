@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -111,7 +111,10 @@ class VolcClient:
         if seed is not None:
             payload["seed"] = seed
         if extra_params:
-            payload.update(extra_params)
+            # 仅允许白名单键，禁止覆盖 model/content（对抗审查 H7）
+            allowed = {"duration", "watermark", "seed", "ratio", "resolution", "camerafixed"}
+            safe = {k: v for k, v in extra_params.items() if k in allowed and k not in payload}
+            payload.update(safe)
 
         resp = await self._client.post(self.s.create_task_url, json=payload)
         data = self._parse(resp)

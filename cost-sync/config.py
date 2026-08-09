@@ -26,6 +26,7 @@ class SyncConfig:
     nocodb_base_url: str
     nocodb_token: str
     nocodb_table_id: str
+    quota_per_yuan: int
 
     @classmethod
     def from_env(cls) -> "SyncConfig":
@@ -35,6 +36,7 @@ class SyncConfig:
             nocodb_base_url=_env("COST_NOCODB_BASE_URL", "http://localhost:18080"),
             nocodb_token=_env("COST_NOCODB_TOKEN"),
             nocodb_table_id=_env("COST_NOCODB_TABLE_ID"),
+            quota_per_yuan=int(_env("COST_QUOTA_PER_YUAN", "500000") or "500000"),
         )
 
     def is_complete(self) -> bool:

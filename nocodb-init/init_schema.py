@@ -45,14 +45,18 @@ STORYBOARDS_COLUMNS = [
     {"title": "指定模型", "column_name": "Model", "uidt": "SingleLineText"},
     {"title": "状态", "column_name": "Status", "uidt": "SingleSelect",
      "dtxp": "pending,running,succeeded,failed", "dtxs": "pending"},
+    {"title": "任务ID", "column_name": "TaskId", "uidt": "SingleLineText"},
     {"title": "成片链接", "column_name": "VideoUrl", "uidt": "URL"},
+    {"title": "分享链接", "column_name": "ShareUrl", "uidt": "URL"},
     {"title": "MinIO路径", "column_name": "MinioPath", "uidt": "SingleLineText"},
+    {"title": "错误信息", "column_name": "ErrorMsg", "uidt": "LongText"},
     {"title": "提交时间", "column_name": "SubmittedAt", "uidt": "DateTime"},
     {"title": "耗时(秒)", "column_name": "DurationSec", "uidt": "Number"},
     {"title": "花费(元)", "column_name": "Cost", "uidt": "Number", "dt": "decimal"},
     {"title": "审核意见", "column_name": "Review", "uidt": "LongText"},
     {"title": "审核状态", "column_name": "ReviewStatus", "uidt": "SingleSelect",
      "dtxp": "待审核,通过,打回"},
+    {"title": "项目键", "column_name": "ProjectKey", "uidt": "SingleLineText"},
     {"title": "备注", "column_name": "Remark", "uidt": "LongText"},
 ]
 

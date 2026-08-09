@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from aggregator import CN_TZ, aggregate
 from config import get_config
@@ -79,7 +79,7 @@ def main() -> int:
 
     # 1. 拉日志
     print(f"[1/3] 拉取 New-API 消费日志 ({cfg.newapi_base_url}) …")
-    nc = NewAPIClient(cfg.newapi_base_url, cfg.newapi_token)
+    nc = NewAPIClient(cfg.newapi_base_url, cfg.newapi_token, quota_per_yuan=cfg.quota_per_yuan)
     log_count = 0
     total_yuan = 0.0
     try:

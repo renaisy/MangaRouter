@@ -15,11 +15,35 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from .config import get_settings
 from .volc_client import ImageInput, ImageRole, VolcClient, VolcError
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+async def require_adapter_auth(
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> None:
+    """要求 Bearer 与 ADAPTER_API_TOKEN 一致。
+
+    生产默认强制：未配置 token 时拒绝（可用 ADAPTER_REQUIRE_AUTH=false 仅限本地调试）。
+    """
+    settings = get_settings()
+    expected = settings.adapter_api_token
+    require = settings.adapter_require_auth
+    if not expected:
+        if require:
+            raise HTTPException(
+                status_code=503,
+                detail="ADAPTER_API_TOKEN 未配置且 ADAPTER_REQUIRE_AUTH=true，拒绝服务",
+            )
+        return
+    if creds is None or creds.scheme.lower() != "bearer" or creds.credentials != expected:
+        raise HTTPException(status_code=401, detail="未授权：需要有效的 Adapter Bearer Token")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 log = logging.getLogger("seedance-adapter")
@@ -105,7 +129,7 @@ def _to_image_inputs(items: list[ImageItem] | None) -> list[ImageInput] | None:
     return [ImageInput(url=it.url, role=it.role) for it in items]
 
 
-@app.post("/v1/videos", response_model=TaskIdResponse)
+@app.post("/v1/videos", response_model=TaskIdResponse, dependencies=[Depends(require_adapter_auth)])
 async def create_video(req: CreateVideoRequest) -> TaskIdResponse:
     try:
         task_id = await client().create_task(
@@ -120,7 +144,7 @@ async def create_video(req: CreateVideoRequest) -> TaskIdResponse:
     return TaskIdResponse(id=task_id)
 
 
-@app.get("/v1/videos/{task_id}", response_model=VideoStatusResponse)
+@app.get("/v1/videos/{task_id}", response_model=VideoStatusResponse, dependencies=[Depends(require_adapter_auth)])
 async def get_video(task_id: str) -> VideoStatusResponse:
     try:
         result = await client().get_task(task_id)
@@ -138,7 +162,7 @@ async def get_video(task_id: str) -> VideoStatusResponse:
 # --------------------------------------------------------------------------- #
 # 路由：同步阻塞风格（提交并等待）
 # --------------------------------------------------------------------------- #
-@app.post("/v1/videos/sync")
+@app.post("/v1/videos/sync", dependencies=[Depends(require_adapter_auth)])
 async def create_video_sync(req: CreateVideoRequest) -> dict[str, Any]:
     try:
         result = await client().create_and_wait(

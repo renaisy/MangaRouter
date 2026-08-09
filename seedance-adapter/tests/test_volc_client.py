@@ -17,6 +17,8 @@ def _make_client(handler: Any) -> VolcClient:
     s = Settings(
         volc_api_key="test-key",
         volc_base_url="https://ark.test/api/v3",
+        adapter_api_token="",
+        adapter_require_auth=False,
         poll_interval_seconds=0,
         poll_max_seconds=10,
         request_timeout_seconds=5,

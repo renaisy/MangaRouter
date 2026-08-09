@@ -16,6 +16,11 @@ class Settings:
     volc_api_key: str
     volc_base_url: str  # 例如 https://ark.cn-beijing.volces.com/api/v3
 
+    # 适配器鉴权：非空则要求 Authorization: Bearer <token>
+    adapter_api_token: str
+    # 生产建议 true：未配置 token 时拒绝启动业务接口
+    adapter_require_auth: bool
+
     # 轮询与超时
     poll_interval_seconds: int   # 查询任务结果间隔
     poll_max_seconds: int        # 单任务最长等待
@@ -46,6 +51,8 @@ def get_settings() -> Settings:
     return Settings(
         volc_api_key=api_key,
         volc_base_url=_env("VOLC_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+        adapter_api_token=_env("ADAPTER_API_TOKEN"),
+        adapter_require_auth=_env("ADAPTER_REQUIRE_AUTH", "true").lower() in ("1", "true", "yes"),
         poll_interval_seconds=int(_env("POLL_INTERVAL_SECONDS", "8")),
         poll_max_seconds=int(_env("POLL_MAX_SECONDS", "900")),
         request_timeout_seconds=int(_env("REQUEST_TIMEOUT_SECONDS", "60")),

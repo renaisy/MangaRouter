@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          pip install httpx fastapi pydantic pytest pytest-asyncio minio starlette
+          pip install -r seedance-adapter/requirements.txt -r seedance-adapter/tests/requirements.txt || true
+          pip install -r cost-sync/requirements.txt || true
+      - name: Adapter tests
+        run: cd seedance-adapter && python -m pytest -q
+      - name: cost-sync tests
+        run: cd cost-sync && python -m pytest -q
+      - name: nocodb-init tests
+        run: cd nocodb-init && python -m pytest -q
+      - name: submit-tool tests
+        run: cd submit-tool && python -m pytest -q
+      - name: compose config
+        run: docker compose config -q
