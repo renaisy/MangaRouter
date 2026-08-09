@@ -1,0 +1,32 @@
+{
+  "_comment": "Seedance 多参考图生视频工作流模板（角色+场景+姿态等多图引导）。",
+  "_how_to_use": [
+    "1. 专家在 ComfyUI 用 Seedance 2.0/2.5 R2V 节点搭好多参考图工作流",
+    "2. 保存(API格式)导出，替换下面的骨架",
+    "3. 把参考图列表用占位符 {{refs_list}} 标记（专业模式会上传多图并替换为文件名列表）",
+    "4. 把提示词用 {{prompt}} 标记",
+    "5. 适合：角色一致性(角色图+场景图)、风格迁移(风格图+内容图)等"
+  ],
+  "1": {
+    "class_type": "LoadImageBatch",
+    "inputs": {
+      "images": "{{refs_list}}"
+    }
+  },
+  "2": {
+    "class_type": "Seedance2_R2V",
+    "inputs": {
+      "prompt": "{{prompt}}",
+      "reference_images": ["1", 0],
+      "model": "doubao-seedance-2-5-pro",
+      "seed": 42
+    }
+  },
+  "3": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "filename_prefix": "seedance_ref",
+      "images": ["2", 0]
+    }
+  }
+}

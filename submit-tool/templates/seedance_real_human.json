@@ -1,0 +1,34 @@
+{
+  "_comment": "Seedance 真人/角色一致性工作流模板（先用 ByteDance Create Image/Video Asset 建立角色资产，再生成）。",
+  "_how_to_use": [
+    "1. 适用场景：漫剧里同一角色在不同镜头保持外貌一致",
+    "2. 前置：在 ComfyUI 里用 'ByteDance Create Image/Video Asset' 节点上传角色素材，",
+    "   完成验证拿到 Group ID（一个角色对应一个 Group ID）",
+    "3. 本模板假设 Group ID 已建好，通过 {{group_id}} 占位传入",
+    "4. 每次生成新镜头时：填提示词 + 该角色的 group_id + （可选）场景参考图",
+    "5. 专家应为本剧每个主要角色各建一个 Group ID，记录在 NocoDB 项目表里复用"
+  ],
+  "1": {
+    "class_type": "ByteDanceCreateImageVideoAsset",
+    "inputs": {
+      "group_id": "{{group_id}}",
+      "asset_image": "{{asset_img}}"
+    }
+  },
+  "2": {
+    "class_type": "Seedance2_RealHuman",
+    "inputs": {
+      "prompt": "{{prompt}}",
+      "group_id": "{{group_id}}",
+      "model": "doubao-seedance-2-0",
+      "seed": 42
+    }
+  },
+  "3": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "filename_prefix": "seedance_human",
+      "images": ["2", 0]
+    }
+  }
+}

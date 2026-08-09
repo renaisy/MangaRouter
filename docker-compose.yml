@@ -1,0 +1,215 @@
+# =============================================================================
+# Seedance-Hub 一键编排文件
+# 漫剧团队 Seedance 智能路由 + 本地/云端协同 基础设施
+#
+# 包含服务：
+#   1. new-api      —— 智能路由网关（多渠道/权重/计费）
+#   2. nocodb       —— 低代码协作平台（项目/分镜/成本管理）
+#   3. minio        —— S3 兼容对象存储（素材库/成片归档）
+#   4. mysql-newapi —— New-API 数据库
+#   5. mysql-nocodb —— NocoDB 数据库
+#
+# 启动：  docker compose up -d
+# 停止：  docker compose down
+# 查看日志：docker compose logs -f new-api
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # New-API 智能路由网关
+  # 文档：https://github.com/QuantumNous/new-api
+  # 默认账号：root / 123456（首次登录后请立即改密）
+  # ---------------------------------------------------------------------------
+  new-api:
+    image: calciumion/new-api:latest
+    container_name: seedance-newapi
+    restart: always
+    depends_on:
+      mysql-newapi:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      SQL_DSN: "root:${NEWAPI_MYSQL_ROOT_PASSWORD}@tcp(mysql-newapi:3306)/newapi"
+      REDIS_CONN_STRING: ""            # 单机可不配 Redis；高并发再启用
+      SESSION_SECRET: "${NEWAPI_SESSION_SECRET}"
+      # 关闭注册，避免外网暴露后被刷号
+      REGISTER_ENABLED: "false"
+      # 初始 root 密码（仅首次生效，建议登录后修改）
+      INITIAL_ROOT_TOKEN: "${NEWAPI_ROOT_TOKEN}"
+    volumes:
+      - ./data/newapi/logs:/data/logs
+      - ./data/newapi/files:/data/files
+    ports:
+      - "${NEWAPI_PORT}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # New-API 专用 MySQL
+  # ---------------------------------------------------------------------------
+  mysql-newapi:
+    image: mysql:8.0
+    container_name: seedance-mysql-newapi
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: "${NEWAPI_MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "newapi"
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./data/newapi/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${NEWAPI_MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # NocoDB 低代码协作平台
+  # 文档：https://docs.nocodb.com/
+  # 首次访问会引导创建管理员账号
+  # ---------------------------------------------------------------------------
+  nocodb:
+    image: nocodb/nocodb:latest
+    container_name: seedance-nocodb
+    restart: always
+    depends_on:
+      mysql-nocodb:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      NC_DB: "mysql2://mysql-nocodb:3306?u=nocodb&p=${NOCODB_MYSQL_PASSWORD}&d=nocodb"
+      NC_AUTH_JWT_SECRET: "${NOCODB_JWT_SECRET}"
+      # 关闭公开注册
+      NC_INVITE_ONLY_SIGNUP: "true"
+      # 程序内需要回填视频链接时调用 New-API / MinIO 的地址（容器内互通）
+      NEWAPI_BASE_URL: "http://new-api:3000"
+      MINIO_ENDPOINT: "http://minio:9000"
+    volumes:
+      - ./data/nocodb/app:/usr/app/data
+    ports:
+      - "${NOCODB_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # NocoDB 专用 MySQL
+  # ---------------------------------------------------------------------------
+  mysql-nocodb:
+    image: mysql:8.0
+    container_name: seedance-mysql-nocodb
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: "${NOCODB_MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "nocodb"
+      MYSQL_USER: "nocodb"
+      MYSQL_PASSWORD: "${NOCODB_MYSQL_PASSWORD}"
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./data/nocodb/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${NOCODB_MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # MinIO 对象存储（素材库 / 成片归档）
+  # 控制台：http://<ip>:${MINIO_CONSOLE_PORT}  用户名/密码见 .env
+  # API：   http://<ip>:${MINIO_PORT}
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: seedance-minio
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./data/minio:/data
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # MinIO 初始化任务：创建 bucket（仅运行一次）
+  # ---------------------------------------------------------------------------
+  minio-init:
+    image: minio/mc:latest
+    container_name: seedance-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb -p local/projects   || true;
+      mc mb -p local/storyboards || true;
+      mc mb -p local/outputs    || true;
+      mc mb -p local/assets     || true;
+      echo 'Buckets created: projects, storyboards, outputs, assets';
+      "
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # 计费同步：每天凌晨把 New-API 消费日志汇总写入 NocoDB Costs 表
+  # 内置 cron，默认 01:05 跑昨天数据。可改 COST_SYNC_CRON / COST_SYNC_ARGS
+  # 也可手动触发：docker compose run --rm cost-sync python sync.py --days 7
+  # ---------------------------------------------------------------------------
+  cost-sync:
+    build: ./cost-sync
+    image: seedance-cost-sync
+    container_name: seedance-cost-sync
+    restart: always
+    depends_on:
+      new-api:
+        condition: service_healthy
+      nocodb:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      # 容器内用服务名访问（同一 docker 网络）
+      COST_NEWAPI_BASE_URL: "http://new-api:3000"
+      COST_NEWAPI_TOKEN: "${COST_NEWAPI_TOKEN}"
+      COST_NOCODB_BASE_URL: "http://nocodb:8080"
+      COST_NOCODB_TOKEN: "${COST_NOCODB_TOKEN}"
+      COST_NOCODB_TABLE_ID: "${COST_NOCODB_TABLE_ID}"
+      # cron 调度（默认每天 01:05）；如想每 6 小时一次：COST_SYNC_CRON="5 */6 * * *"
+      COST_SYNC_CRON: "${COST_SYNC_CRON:-5 1 * * *}"
+      COST_SYNC_ARGS: "${COST_SYNC_ARGS:---days 1}"
+
+  # ---------------------------------------------------------------------------
+  # 成本看板：从 NocoDB Costs 表读数据做可视化
+  # 访问：http://<ip>:${DASH_PORT}
+  # ---------------------------------------------------------------------------
+  cost-dashboard:
+    build: ./cost-dashboard
+    image: seedance-cost-dashboard
+    container_name: seedance-cost-dashboard
+    restart: always
+    depends_on:
+      nocodb:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      DASH_NOCODB_BASE_URL: "http://nocodb:8080"
+      DASH_NOCODB_TOKEN: "${COST_NOCODB_TOKEN}"
+      DASH_COSTS_TABLE_ID: "${COST_NOCODB_TABLE_ID}"
+    ports:
+      - "${DASH_PORT}:18502"

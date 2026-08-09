@@ -1,0 +1,39 @@
+{
+  "_comment": "Seedance 首尾帧图生视频工作流模板（API 格式骨架）。",
+  "_how_to_use": [
+    "1. 内部专家在 ComfyUI 界面用 Seedance 2.0 FLF2V 节点搭好首尾帧工作流",
+    "2. 菜单 → '保存(API格式)' 导出 JSON，用导出的真实节点结构替换下面的骨架",
+    "3. 把需要外部传入的值改成占位符：{{prompt}} / {{first_frame_img}} / {{last_frame_img}}",
+    "4. 普通成员在 Streamlit 专业模式选本模板，上传首帧尾帧+填提示词即可触发",
+    "5. 占位符约定见 comfyui_bridge.fill_template：整体占位直接替换为原类型值"
+  ],
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{first_frame_img}}"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{last_frame_img}}"
+    }
+  },
+  "3": {
+    "class_type": "Seedance2_FLF2V",
+    "inputs": {
+      "prompt": "{{prompt}}",
+      "first_frame": ["1", 0],
+      "last_frame": ["2", 0],
+      "model": "doubao-seedance-2-0",
+      "seed": 42
+    }
+  },
+  "4": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "filename_prefix": "seedance_flf",
+      "images": ["3", 0]
+    }
+  }
+}

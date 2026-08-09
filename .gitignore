@@ -1,0 +1,53 @@
+# ============ 敏感文件（绝不能提交）============
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+.env.test
+.env.local
+
+# ============ 运行时数据（勿入库）============
+data/
+*.log
+logs/
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ============ 虚拟环境 ============
+venv/
+.venv/
+env/
+ENV/
+
+# ============ IDE / 编辑器 ============
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============ Streamlit ============
+.streamlit/secrets.toml
+
+# ============ Docker ============
+docker-compose.override.yml
+
+# ============ 工具元数据 ============
+.zcode/
