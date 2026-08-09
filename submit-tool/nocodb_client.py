@@ -39,14 +39,45 @@ class NocoDBStoryboards:
     def is_configured(self) -> bool:
         return bool(self.token and self.table_id)
 
-    def list_by_status(self, status: str, limit: int = 100) -> list[dict[str, Any]]:
-        where = quote(f"(Status,eq,{_escape_where_value(status)})")
+    def _list(self, where: str, limit: int = 100) -> list[dict[str, Any]]:
         r = self._client.get(
             f"/api/v2/tables/{self.table_id}/records",
             params={"where": where, "limit": limit},
         )
         r.raise_for_status()
         return list((r.json() or {}).get("list") or [])
+
+    def list_by_status(
+        self,
+        status: str,
+        limit: int = 100,
+        project_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = [f"(Status,eq,{_escape_where_value(status)})"]
+        if project_key:
+            clauses.append(f"(ProjectKey,eq,{_escape_where_value(project_key)})")
+        where = quote("~and".join(clauses))
+        return self._list(where, limit=limit)
+
+    def list_by_fingerprint(
+        self,
+        fingerprint: str,
+        status: str = "succeeded",
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        where = quote(
+            f"(Fingerprint,eq,{_escape_where_value(fingerprint)})"
+            f"~and(Status,eq,{_escape_where_value(status)})"
+        )
+        return self._list(where, limit=limit)
+
+    def create_record(self, fields: dict[str, Any]) -> dict[str, Any]:
+        r = self._client.post(
+            f"/api/v2/tables/{self.table_id}/records",
+            json=fields,
+        )
+        r.raise_for_status()
+        return r.json() or {}
 
     def get_record(self, record_id: int | str) -> dict[str, Any] | None:
         r = self._client.get(f"/api/v2/tables/{self.table_id}/records/{record_id}")
@@ -56,7 +87,6 @@ class NocoDBStoryboards:
         return r.json() or None
 
     def patch_record(self, record_id: int | str, fields: dict[str, Any]) -> None:
-        # NocoDB v2：PATCH /records + body 带 Id
         r = self._client.patch(
             f"/api/v2/tables/{self.table_id}/records",
             json={"Id": int(record_id), **fields},

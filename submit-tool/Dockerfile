@@ -6,7 +6,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py comfyui_bridge.py minio_store.py nocodb_client.py newapi_submit.py webhook_notify.py worker.py ./
+COPY app.py comfyui_bridge.py minio_store.py nocodb_client.py newapi_submit.py webhook_notify.py worker.py submit_cache.py ./
 COPY templates ./templates
 
 # 非 root 运行（安全加固）

@@ -5,6 +5,7 @@ import pytest
 
 from minio_store import (
     sanitize_object_prefix,
+    project_object_prefix,
     validate_image_url_for_submit,
     _host_is_private,
     _validate_video_download_url,
@@ -13,6 +14,10 @@ from minio_store import (
 
 def test_sanitize_prefix_ok():
     assert sanitize_object_prefix("proj/ep1/shot-01") == "proj/ep1/shot-01"
+
+
+def test_project_prefix_forced():
+    assert project_object_prefix("manga1", "ep", "01").startswith("projects/manga1/")
 
 
 def test_sanitize_prefix_rejects_traversal():

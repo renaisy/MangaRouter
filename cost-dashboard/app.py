@@ -57,6 +57,7 @@ with st.sidebar:
     default_start = today - timedelta(days=30)
     date_range = st.date_input("日期范围", value=(default_start, today),
                                max_value=today)
+    project_filter = st.text_input("按 Project 过滤（空=全部）", value="")
 
 
 @st.cache_data(ttl=300)
@@ -139,6 +140,8 @@ else:
     start = end = date_range
 
 df = safe_filter(df_all, start, end)
+if project_filter.strip() and "Project" in df.columns:
+    df = df[df["Project"].astype(str) == project_filter.strip()].copy()
 if df.empty:
     st.warning(f"{start} ~ {end} 无数据")
     st.stop()

@@ -26,5 +26,11 @@ jobs:
         run: cd nocodb-init && python -m pytest -q
       - name: submit-tool tests
         run: cd submit-tool && python -m pytest -q
+      - name: admin-tool tests
+        run: |
+          pip install httpx pytest
+          cd admin-tool && python -m pytest -q
       - name: compose config
         run: docker compose config -q
+      - name: smoke-check script syntax
+        run: bash -n deploy/smoke-check.sh

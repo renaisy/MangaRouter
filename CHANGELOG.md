@@ -7,6 +7,45 @@
 
 ---
 
+## [0.8.0] - 2026-08-09
+
+### C8 效率与可观测
+- 提交指纹缓存（`Fingerprint` 字段 + `SUBMIT_CACHE_ENABLED`）
+- worker 定时窗口 `WORKER_ACTIVE_HOURS`（如 `0-6`）
+- worker 结构化 JSON 日志与失败计数
+
+### C7 多剧隔离
+- MinIO 强制 `projects/{ProjectKey}/...` 前缀
+- submit / 批量必填或过滤 ProjectKey；成本看板按 Project 筛选
+
+### C6 ComfyUI 生产化
+- `fill_template` 剥离 `_` 元数据；专业模式归档 MinIO + 写 NocoDB
+- bridge / 缓存 / 窗口单测；ComfyUI 手册 Day6 归档验收
+
+### C5 上线硬化
+- MinIO 业务用户 `MINIO_APP_*`（minio-init 建策略）；submit 不用 root
+- `deploy/smoke-check.sh`；Caddy IP 白名单注释模板；成片档分令牌运营说明
+- 迭代计划重写为 C5–C8 真相源
+
+### 测试
+- submit-tool 扩展单测；compose config；smoke-check 脚本
+
+---
+
+## [0.4.2] - 2026-08-09
+
+### 管理员配置页（方案 1 + A）
+
+- **admin-tool**：Streamlit 薄封装 New-API 渠道/令牌管理（密钥仍只存 New-API）
+- **模板向导**：一键创建漫剧 `draft` / `standard` / `final` 渠道（火山 + 可选聚合 / seedance-adapter）
+- **编排**：compose `admin-tool`（`127.0.0.1:18503`）；Caddy `admin.*` + 与 team 分离的 basicauth
+- **文档**：[`docs/管理员配置手册.md`](docs/管理员配置手册.md)；部署/渠道/安全/README 同步
+
+### 测试
+- admin-tool pytest（mock httpx）；CI 增加 admin-tool 步骤
+
+---
+
 ## [0.4.1] - 2026-08-09
 
 ### 对抗性安全热修（公网 VPS）

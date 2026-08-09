@@ -57,6 +57,7 @@ STORYBOARDS_COLUMNS = [
     {"title": "审核状态", "column_name": "ReviewStatus", "uidt": "SingleSelect",
      "dtxp": "待审核,通过,打回"},
     {"title": "项目键", "column_name": "ProjectKey", "uidt": "SingleLineText"},
+    {"title": "提交指纹", "column_name": "Fingerprint", "uidt": "SingleLineText"},
     {"title": "备注", "column_name": "Remark", "uidt": "LongText"},
 ]
 

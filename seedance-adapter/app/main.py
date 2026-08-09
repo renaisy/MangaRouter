@@ -49,6 +49,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("seedance-adapter")
 
 _client: VolcClient | None = None
+_fail_count = 0
+
+
+def _bump_fail(exc: Exception) -> None:
+    global _fail_count
+    _fail_count += 1
+    log.error("upstream_fail count=%s err=%s", _fail_count, exc)
 
 
 @asynccontextmanager
@@ -140,6 +147,7 @@ async def create_video(req: CreateVideoRequest) -> TaskIdResponse:
             extra_params=req.extra_params,
         )
     except VolcError as e:
+        _bump_fail(e)
         raise HTTPException(status_code=502, detail=str(e))
     return TaskIdResponse(id=task_id)
 
@@ -149,6 +157,7 @@ async def get_video(task_id: str) -> VideoStatusResponse:
     try:
         result = await client().get_task(task_id)
     except VolcError as e:
+        _bump_fail(e)
         raise HTTPException(status_code=502, detail=str(e))
     return VideoStatusResponse(
         id=result.task_id,
@@ -173,6 +182,7 @@ async def create_video_sync(req: CreateVideoRequest) -> dict[str, Any]:
             extra_params=req.extra_params,
         )
     except VolcError as e:
+        _bump_fail(e)
         raise HTTPException(status_code=504, detail=str(e))
     return {
         "id": result.task_id,
@@ -184,6 +194,6 @@ async def create_video_sync(req: CreateVideoRequest) -> dict[str, Any]:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    # 仅返回存活状态，不暴露 api_key 是否配置（避免给未授权方探测面）
-    return {"status": "ok"}
+async def health() -> dict[str, object]:
+    # 不暴露 api_key 配置状态；仅返回存活与累计上游失败次数
+    return {"status": "ok", "fail_count": _fail_count}

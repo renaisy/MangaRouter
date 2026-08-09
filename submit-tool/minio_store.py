@@ -70,6 +70,18 @@ def sanitize_object_prefix(prefix: str) -> str:
     return "/".join(clean)
 
 
+def project_object_prefix(project_key: str, *parts: str) -> str:
+    """强制多剧隔离前缀：projects/{ProjectKey}/..."""
+    key = sanitize_object_prefix(project_key or "default")
+    # 只取第一段作为剧键，避免嵌套绕过
+    key = key.split("/")[0]
+    rest = [sanitize_object_prefix(p) for p in parts if p]
+    flat = "/".join(x for x in rest if x)
+    if flat:
+        return f"projects/{key}/{flat}"
+    return f"projects/{key}"
+
+
 def _host_is_private(hostname: str) -> bool:
     host = hostname.split(":")[0]
     if host in ("localhost", "metadata.google.internal"):
@@ -137,15 +149,17 @@ def upload_image_bytes(
     content_type: str = "image/png",
     bucket: str = "storyboards",
     client: Minio | None = None,
+    project_key: str = "default",
 ) -> str:
-    """上传图片并返回公网预签名 GET URL。"""
+    """上传图片并返回公网预签名 GET URL（路径含 projects/{ProjectKey}/）。"""
     suffix = suffix.lower()
     if suffix not in _ALLOWED_IMG_SUFFIXES:
         raise ValueError(f"不支持的图片格式 {suffix}，仅支持 {sorted(_ALLOWED_IMG_SUFFIXES)}")
     if len(data) > _MAX_IMG_BYTES:
         raise ValueError(f"图片过大（{len(data)/1024/1024:.1f}MB），上限 {_MAX_IMG_BYTES/1024/1024:.0f}MB")
 
-    object_name = f"uploads/{datetime.now():%Y%m%d}/{uuid.uuid4().hex}{suffix}"
+    prefix = project_object_prefix(project_key, "uploads", datetime.now().strftime("%Y%m%d"))
+    object_name = f"{prefix}/{uuid.uuid4().hex}{suffix}"
     c = client or minio_client()
     c.put_object(bucket, object_name, io.BytesIO(data), length=len(data), content_type=content_type)
 
@@ -154,28 +168,23 @@ def upload_image_bytes(
     return pc.presigned_get_object(bucket, object_name, expires=timedelta(seconds=seconds))
 
 
-def upload_streamlit_file(uploaded_file, bucket: str = "storyboards", client: Minio | None = None) -> str:
+def upload_streamlit_file(
+    uploaded_file,
+    bucket: str = "storyboards",
+    client: Minio | None = None,
+    project_key: str = "default",
+) -> str:
     raw_name = str(getattr(uploaded_file, "name", ""))
     suffix = os.path.splitext(raw_name)[1].lower() or ".png"
     data = uploaded_file.getvalue()
     ctype = getattr(uploaded_file, "type", None) or "image/png"
-    return upload_image_bytes(data, suffix, ctype, bucket=bucket, client=client)
+    return upload_image_bytes(
+        data, suffix, ctype, bucket=bucket, client=client, project_key=project_key,
+    )
 
 
-def archive_video_from_url(
-    video_url: str,
-    object_prefix: str,
-    bucket: str = "outputs",
-    client: Minio | None = None,
-    share_days: int = 2,
-) -> tuple[str, str]:
-    """下载方舟成片到 MinIO，返回 (minio_path, share_url)。含 SSRF/体积防护。"""
+def _download_video_bytes(video_url: str) -> bytes:
     import httpx
-
-    _validate_video_download_url(video_url)
-    prefix = sanitize_object_prefix(object_prefix)
-    c = client or minio_client()
-    object_name = f"{prefix}/{uuid.uuid4().hex}.mp4"
 
     max_redirects = 3
     with httpx.Client(timeout=120, follow_redirects=True, max_redirects=max_redirects) as hx:
@@ -191,10 +200,66 @@ def archive_video_from_url(
                 if total > _MAX_VIDEO_BYTES:
                     raise ValueError(f"成片超过上限 {_MAX_VIDEO_BYTES} bytes")
                 buf.write(chunk)
-            data = buf.getvalue()
+            return buf.getvalue()
 
-    c.put_object(bucket, object_name, io.BytesIO(data), length=len(data), content_type="video/mp4")
+
+def _put_video_bytes(
+    data: bytes,
+    object_prefix: str,
+    bucket: str = "outputs",
+    client: Minio | None = None,
+    share_days: int = 2,
+    suffix: str = ".mp4",
+) -> tuple[str, str]:
+    prefix = sanitize_object_prefix(object_prefix)
+    c = client or minio_client()
+    ctype = "video/mp4" if suffix.endswith(".mp4") else "application/octet-stream"
+    object_name = f"{prefix}/{uuid.uuid4().hex}{suffix}"
+    c.put_object(bucket, object_name, io.BytesIO(data), length=len(data), content_type=ctype)
     minio_path = f"{bucket}/{object_name}"
     pc = public_presign_client()
     share = pc.presigned_get_object(bucket, object_name, expires=timedelta(days=share_days))
     return minio_path, share
+
+
+def archive_video_from_url(
+    video_url: str,
+    object_prefix: str,
+    bucket: str = "outputs",
+    client: Minio | None = None,
+    share_days: int = 2,
+) -> tuple[str, str]:
+    """下载方舟成片到 MinIO，返回 (minio_path, share_url)。含 SSRF/体积防护。"""
+    _validate_video_download_url(video_url)
+    data = _download_video_bytes(video_url)
+    return _put_video_bytes(data, object_prefix, bucket=bucket, client=client, share_days=share_days)
+
+
+def archive_trusted_media_url(
+    media_url: str,
+    object_prefix: str,
+    *,
+    trusted_base_url: str,
+    bucket: str = "outputs",
+    client: Minio | None = None,
+    share_days: int = 2,
+) -> tuple[str, str]:
+    """从已配置的可信 Host（如 ComfyUI）下载并归档；允许 http（内网/VPN）。"""
+    if not trusted_base_url:
+        raise ValueError("未配置可信 Base URL")
+    parsed = urlparse(media_url)
+    trusted = urlparse(trusted_base_url)
+    if not parsed.hostname or parsed.hostname.lower() != (trusted.hostname or "").lower():
+        raise ValueError(f"媒体 Host 与可信地址不符：{parsed.hostname}")
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("仅允许 http/https")
+    path = parsed.path or ""
+    suffix = ".mp4"
+    for ext in (".mp4", ".webm", ".gif", ".png", ".jpg", ".jpeg", ".webp"):
+        if path.lower().endswith(ext):
+            suffix = ext
+            break
+    data = _download_video_bytes(media_url)
+    return _put_video_bytes(
+        data, object_prefix, bucket=bucket, client=client, share_days=share_days, suffix=suffix,
+    )

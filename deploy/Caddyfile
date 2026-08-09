@@ -1,20 +1,27 @@
 # MangaRouter 腾讯云 VPS 反代（Caddy）—— 子域名 + 基础鉴权
 #
-# DNS：api / collab / submit / dash / s3 → VPS 公网 IP
+# DNS：api / collab / submit / dash / admin / s3 → VPS 公网 IP
 # MinIO 控制台默认不对公网开放（请用 SSH 隧道：ssh -L 19001:127.0.0.1:19001 vps）
 #
 # 生成 basicauth 哈希：caddy hash-password
-# 把下面 basicauth 的 hash 换成真实值，用户名可改
+# 把下面 basicauth 的 hash 换成真实值；admin 与 team 必须分用户分密码
 
 {
 	email admin@your.domain
 }
 
 api.your.domain {
+	# 可选 IP 白名单示例（默认关；需要时取消注释并改 IP）：
+	# @allowed { remote_ip 203.0.113.0/24 }
+	# handle @allowed {
+	# 	reverse_proxy 127.0.0.1:13000
+	# }
+	# handle { respond "Forbidden" 403 }
 	reverse_proxy 127.0.0.1:13000
 }
 
 collab.your.domain {
+	# 可选 IP 白名单：同上模式
 	reverse_proxy 127.0.0.1:18080
 }
 
@@ -33,6 +40,15 @@ dash.your.domain {
 		team $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD
 	}
 	reverse_proxy 127.0.0.1:18502
+}
+
+# 管理员渠道配置：与 team 分离的 basicauth 用户（切勿与 team 同密）
+admin.your.domain {
+	# 可选：在 basicauth 外包一层 @allowed remote_ip（见 api 段注释）
+	basicauth {
+		admin $2a$14$REPLACE_WITH_CADDY_ADMIN_HASH_PASSWORD
+	}
+	reverse_proxy 127.0.0.1:18503
 }
 
 # MinIO S3 API（方舟拉预签名图）。桶保持 private。

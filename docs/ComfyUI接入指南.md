@@ -151,10 +151,15 @@ python main.py --enable-cors-header --listen 0.0.0.0
 | Day 3 | 学会 R2V 多参考图，理解角色图+场景图组合 | 官方 R2V 教程 |
 | Day 4 | 学会「保存API格式」+ 改占位符，导出第一个模板 | 本指南第四节 |
 | Day 5 | 学会 Real Human + Group ID，建立本剧主要角色资产 | 真人一致性教程 |
-| Day 6 | 把模板接进 Streamlit 调用桥，让同事试用 | 本仓库 comfyui_bridge |
+| Day 6 | 模板进 Streamlit + **归档闭环验收**（ShareUrl/MinioPath 进 NocoDB） | 本仓库 comfyui_bridge + 专业模式 |
 | Day 7 | 沉淀：把好用的提示词、参数组合存进 NocoDB | — |
 
-**学成标志**：能给同事的任意"我想要这个效果"需求，30 分钟内搭出工作流并存成模板。
+**学成标志**：能给同事的任意"我想要这个效果"需求，30 分钟内搭出工作流并存成模板；专业模式跑通后 NocoDB 可见 ShareUrl。
+
+**验收（Day 6 Check）**
+1. 用真实 API JSON 替换 `submit-tool/templates/` 骨架（未替换勿选该模板生产）
+2. 配置 `COMFYUI_BASE_URL`，提交后页面预览成片
+3. 确认 MinIO `projects/{ProjectKey}/comfyui/...` 有对象，NocoDB Status=succeeded 且 ShareUrl 非空
 
 ---
 
@@ -173,7 +178,7 @@ A：①ComfyUI 启动时要加 `--enable-cors-header`；②检查 ComfyUI 地址
 A：占位符必须独占一个值字段（`"image": "{{first_frame_img}}"`），不能写半截（`"image": "prefix_{{x}}"` 部分场景支持但建议整体占位）。
 
 **Q：生成的视频在哪？**
-A：ComfyUI 的 `output/` 目录；调用桥会返回可访问的 `/view?filename=...` URL，Streamlit 里直接预览。
+A：ComfyUI 的 `output/` 目录；调用桥返回 `/view?...` URL；专业模式成功后会归档到 MinIO 并写 NocoDB ShareUrl。
 
 **Q：Group ID 是什么，怎么管理？**
 A：一个 Group ID 代表一个"已验证的角色身份"。为本剧每个主要角色各建一个，记在 NocoDB 项目表的备注里，全员复用。换剧要新建。

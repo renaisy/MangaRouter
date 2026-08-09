@@ -116,11 +116,14 @@ def fill_template(template: dict[str, Any], variables: dict[str, Any]) -> dict[s
 
     占位语法：节点 inputs 里的字符串值若形如 {{var_name}}，则用 variables["var_name"] 替换。
     支持替换为标量（str/int）或列表（多参考图场景）。
+    提交前会剥离以下划线开头的元数据键（如 _comment / _how_to_use）。
     """
     import copy
     import re
 
     filled = copy.deepcopy(template)
+    # 去掉文档用元数据，避免 ComfyUI 拒收
+    filled = {k: v for k, v in filled.items() if not str(k).startswith("_")}
     pattern = re.compile(r"\{\{(\w+)\}\}")
 
     def _replace(node: Any) -> Any:
