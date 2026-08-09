@@ -5,6 +5,56 @@
 
 ---
 
+## [0.3.2] - 2026-08-09
+
+### 验证发现的问题修复（重点验证 v0.3.1 改动后的真实联调）
+
+#### 🔴 紧急修复：NocoDB PATCH 回归（v0.3.1 引入）
+- **修复计费同步静默失败**：v0.3.1 把更新端点改成了 path 参数式
+  `PATCH /records/{recordId}`，但 NocoDB v2 官方契约是 **body 带 Id 式**，
+  path 参数式有已知 404 bug（GitHub Issue #11044/#11722/#11807）。
+  回退为 `PATCH /records` + body `{"Id": id, ...fields}`，恢复计费同步更新能力
+
+#### 🟠 Date 字段过滤
+- `_find_existing` 对 Date 字段从 `eq` 改为 `exactDate` 关键字
+  （NocoDB v2 对 Date 的可工作语法，避免底层时间分量匹配不上）
+
+#### 🟠 镜像版本升级（v0.3.1 锁的 tag 过旧）
+- `new-api`: `v0.6.0`(2025-03) → `v0.6.8.2`（v0.6 系列末版，不跨大版本）
+- `nocodb`: `0.257.2`(2024-10) → `2026.08.0`（含 v2 PATCH 端点修复，与上面的修复配合）
+- `mysql`: `8.0`(滚动) → `8.0.46`（锁 patch 版本保证可复现）
+- minio/minio、minio/mc 保留（验证有效）
+
+### P2 重构：nocodb-init 数据正确性（第一阶段）
+
+#### dt 类型映射（影响最大，数据正确性根因）
+- 新增 `UIDT_TO_DT` 映射表，建表时按 uidt 自动填底层 MySQL 类型
+  （此前全为 `character varying`，导致数值/日期排序聚合退化为字符串比较）
+- Number→int、Date→date、DateTime→timestamp、LongText→text 等
+- 金额字段（Amount/Cost/Budget）显式标 `dt: decimal`，避免 int 丢小数
+
+#### 建表幂等
+- 新增 `list_existing_tables`，建表前先 GET 查重，已存在的表跳过
+- 避免重跑时半失败残留不一致状态
+
+#### 无人值守化（支持容器化/CI）
+- `main()` 改用 argparse + 环境变量（`NOCODB_BASE_URL`/`NOCODB_TOKEN`/`NOCODB_BASE_ID`）
+- `input()` 交互式仅在 `--interactive` 时兜底
+- 可作为 compose 初始化任务或 CI 步骤运行
+
+#### create_table 返回值校验
+- 拿不到 tableId 时抛 `RuntimeError`，不再返回空串伪装成功
+
+### 测试
+- 新增 nocodb-init 测试套件 **15 个用例**（dt 映射、金额 decimal 校验、payload 构造、
+  幂等查重、返回值校验）
+- 全部 **38 个测试通过**（adapter 9 + cost-sync 14 + nocodb-init 15）
+
+### 文档
+- 部署指南：nocodb-init 改为支持环境变量/容器化运行
+
+---
+
 ## [0.3.1] - 2026-08-09
 
 ### 代码审查后的修复（基于全面 review，覆盖全部 P0 + P1）

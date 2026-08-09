@@ -21,7 +21,7 @@ services:
   # 默认账号：root / 123456（首次登录后请立即改密）
   # ---------------------------------------------------------------------------
   new-api:
-    image: calciumion/new-api:v0.6.0
+    image: calciumion/new-api:v0.6.8.2
     container_name: seedance-newapi
     restart: always
     depends_on:
@@ -52,7 +52,7 @@ services:
   # New-API 专用 MySQL
   # ---------------------------------------------------------------------------
   mysql-newapi:
-    image: mysql:8.0
+    image: mysql:8.0.46
     container_name: seedance-mysql-newapi
     restart: always
     environment:
@@ -74,7 +74,7 @@ services:
   # 首次访问会引导创建管理员账号
   # ---------------------------------------------------------------------------
   nocodb:
-    image: nocodb/nocodb:0.257.2
+    image: nocodb/nocodb:2026.08.0
     container_name: seedance-nocodb
     restart: always
     depends_on:
@@ -104,7 +104,7 @@ services:
   # NocoDB 专用 MySQL
   # ---------------------------------------------------------------------------
   mysql-nocodb:
-    image: mysql:8.0
+    image: mysql:8.0.46
     container_name: seedance-mysql-nocodb
     restart: always
     environment:

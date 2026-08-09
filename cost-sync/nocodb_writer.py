@@ -45,8 +45,10 @@ class NocoDBWriter:
                        channel: str, group: str) -> int | None:
         """按业务唯一键（含 group）查已有记录，返回行 Id（无则 None）。"""
         from urllib.parse import quote
+        # Date 字段用 exactDate 关键字（NocoDB v2 对 Date 的可工作语法，
+        # eq + 日期串可能因底层时间分量匹配不上）
         where_raw = (
-            f"(Date,eq,{_escape_where_value(date)})"
+            f"(Date,exactDate,{_escape_where_value(date)})"
             f"~and(Member,eq,{_escape_where_value(member)})"
             f"~and(Model,eq,{_escape_where_value(model)})"
             f"~and(Channel,eq,{_escape_where_value(channel)})"
@@ -79,9 +81,10 @@ class NocoDBWriter:
             key.date, key.member, key.model, key.channel, key.group
         )
         if existing_id:
+            # v2 官方契约：PATCH /records + body 带 Id（path 参数式 records/{id} 在 v2 有 404 bug）
             r = self._client.patch(
-                f"/api/v2/tables/{self.table_id}/records/{existing_id}",
-                json=fields,
+                f"/api/v2/tables/{self.table_id}/records",
+                json={"Id": existing_id, **fields},
             )
             r.raise_for_status()
             return "updated"

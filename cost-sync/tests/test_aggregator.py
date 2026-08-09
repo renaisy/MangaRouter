@@ -134,9 +134,9 @@ def test_upsert_updates_when_exists():
     # 应该 patch 而不是 post
     assert w._client.patch.call_count == 1
     assert w._client.post.call_count == 0
-    # v0.3.1：Id 走 path 参数（PATCH .../records/{id}），不在 body 里
-    patch_url = w._client.patch.call_args.args[0]
-    assert "/records/42" in patch_url
+    # v0.3.2：v2 官方契约 PATCH /records + body 带 Id（path 式在 v2 有 404 bug）
+    sent = w._client.patch.call_args.kwargs["json"]
+    assert sent["Id"] == 42
 
 
 def test_find_existing_where_includes_group():
