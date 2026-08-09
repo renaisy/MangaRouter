@@ -8,7 +8,7 @@
 
 1. **主部署**：腾讯云 VPS；安全组仅 **22 / 80 / 443**；compose 端口绑 `127.0.0.1`。
 2. **密钥**：只进环境变量 / `.env`（已 gitignore）；**禁止**写入 Streamlit `text_input` 默认值或下发到浏览器。
-3. **公网 UI**：`submit.*` / `dash.*` / `admin.*` 必须 Caddy `basicauth`（或等价 SSO）；`admin` 用户与 `team` **分开**；MinIO **控制台不对公网**。
+3. **公网 UI**：`submit.*` / `dash.*` / `admin.*` /（启用时）`comfy.*` 必须 Caddy `basicauth`；`admin`/`expert` 与 `team` 分开；MinIO **控制台不对公网**。
 4. **适配器**：生产 `ADAPTER_REQUIRE_AUTH=true` 且必须配置 `ADAPTER_API_TOKEN`；New-API 渠道密钥与之相同。
 5. **出站 URL**：成片下载 / ImageUrl 必须 https + Host 白名单；禁止私网/metadata。
 6. **预签名**：只用 `SUBMIT_MINIO_PUBLIC_ENDPOINT` 签名；禁止「内网签名再改 Host」。

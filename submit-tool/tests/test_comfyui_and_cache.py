@@ -42,6 +42,23 @@ def test_output_urls_encode(monkeypatch):
     bridge.close()
 
 
+def test_output_urls_public_vs_internal():
+    bridge = ComfyUIBridge(
+        "http://comfyui:8188",
+        public_base_url="https://comfy.example.com",
+    )
+    entry = {
+        "outputs": {
+            "1": {"images": [{"filename": "x.png", "subfolder": "", "type": "output"}]}
+        }
+    }
+    pub = bridge.output_urls(entry, for_browser=True)
+    internal = bridge.output_urls(entry, for_browser=False)
+    assert pub[0].startswith("https://comfy.example.com/view?")
+    assert internal[0].startswith("http://comfyui:8188/view?")
+    bridge.close()
+
+
 def test_wait_result_raises_on_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={

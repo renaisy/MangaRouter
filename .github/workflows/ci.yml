@@ -31,6 +31,8 @@ jobs:
           pip install httpx pytest
           cd admin-tool && python -m pytest -q
       - name: compose config
-        run: docker compose config -q
+        run: |
+          docker compose config -q
+          docker compose --profile comfyui config -q
       - name: smoke-check script syntax
         run: bash -n deploy/smoke-check.sh

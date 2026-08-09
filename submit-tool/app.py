@@ -41,6 +41,7 @@ class AppConfig:
     nocodb_token: str
     table_id: str
     comfyui_base: str
+    comfyui_public_base: str
 
 
 def load_config() -> AppConfig:
@@ -51,6 +52,7 @@ def load_config() -> AppConfig:
         nocodb_token=os.environ.get("NOCODB_TOKEN", ""),
         table_id=os.environ.get("STORYBOARDS_TABLE_ID", ""),
         comfyui_base=os.environ.get("COMFYUI_BASE_URL", "").rstrip("/"),
+        comfyui_public_base=os.environ.get("COMFYUI_PUBLIC_BASE_URL", "").rstrip("/"),
     )
 
 
@@ -100,6 +102,8 @@ with st.sidebar:
     st.text(f"令牌: {'已配置' if CFG.newapi_token else '未配置'}")
     if CFG.comfyui_base:
         st.text(f"ComfyUI: {CFG.comfyui_base}")
+        if CFG.comfyui_public_base:
+            st.text(f"ComfyUI 公网: {CFG.comfyui_public_base}")
     st.caption("成片档请使用仅绑定 final 分组的令牌（SUBMIT_TOKEN_FINAL）。")
 
 
@@ -373,7 +377,10 @@ else:
             st.error("ComfyUI 地址未在允许列表中")
             st.stop()
         pk = project_key.strip()
-        bridge = ComfyUIBridge(CFG.comfyui_base)
+        bridge = ComfyUIBridge(
+            CFG.comfyui_base,
+            public_base_url=CFG.comfyui_public_base or None,
+        )
         try:
             if not bridge.health():
                 raise ComfyUIError(f"ComfyUI 不可达：{CFG.comfyui_base}")
@@ -391,7 +398,8 @@ else:
             prompt_id = bridge.submit(workflow)
             st.write(f"prompt_id=`{prompt_id}`，轮询中…")
             entry = bridge.wait_result(prompt_id)
-            urls = bridge.output_urls(entry)
+            urls = bridge.output_urls(entry, for_browser=True)
+            internal_urls = bridge.output_urls(entry, for_browser=False)
             if not urls:
                 st.warning("完成但未找到输出文件")
                 st.stop()
@@ -403,12 +411,13 @@ else:
                     st.video(u)
                 else:
                     st.image(u)
-            # 归档首个媒体到 MinIO + NocoDB
-            first = urls[0]
+            # 归档走内网 URL，避免公网 basicauth 挡服务端下载
+            first_internal = internal_urls[0]
+            first_public = urls[0]
             prefix = project_object_prefix(pk, "comfyui", prompt_id)
             try:
                 minio_path, share = archive_trusted_media_url(
-                    first, prefix, trusted_base_url=CFG.comfyui_base,
+                    first_internal, prefix, trusted_base_url=CFG.comfyui_base,
                 )
                 st.success(f"已归档：{minio_path}")
                 st.code(share)
@@ -421,7 +430,7 @@ else:
                             "Model": "comfyui",
                             "Status": "succeeded",
                             "TaskId": prompt_id,
-                            "VideoUrl": first,
+                            "VideoUrl": first_public,
                             "MinioPath": minio_path,
                             "ShareUrl": share,
                             "ProjectKey": pk,

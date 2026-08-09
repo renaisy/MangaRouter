@@ -28,8 +28,16 @@ class ComfyUIError(RuntimeError):
 class ComfyUIBridge:
     """与 ComfyUI 服务端交互的轻量客户端。"""
 
-    def __init__(self, base_url: str, timeout: int = 30) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout: int = 30,
+        public_base_url: str | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
+        # 浏览器预览用公网前缀；API/归档仍走 base_url
+        pub = (public_base_url or "").strip().rstrip("/")
+        self.public_base_url = pub or self.base_url
         self._client = httpx.Client(timeout=timeout)
 
     def close(self) -> None:
@@ -88,9 +96,19 @@ class ComfyUIBridge:
             time.sleep(interval)
         raise ComfyUIError(f"工作流 {prompt_id} 超时（>{max_seconds}s）")
 
-    def output_urls(self, history_entry: dict[str, Any]) -> list[str]:
-        """从 history 条目里提取输出文件，拼成可访问 URL（含 URL 编码）。"""
+    def output_urls(
+        self,
+        history_entry: dict[str, Any],
+        *,
+        for_browser: bool = True,
+    ) -> list[str]:
+        """从 history 条目里提取输出文件，拼成可访问 URL（含 URL 编码）。
+
+        for_browser=True 时用 public_base_url（经 Caddy 公网预览）；
+        False 时用内网 base_url（submit-tool 归档下载，避开 basicauth）。
+        """
         from urllib.parse import quote
+        root = self.public_base_url if for_browser else self.base_url
         urls: list[str] = []
         outputs = history_entry.get("outputs", {})
         for node_out in outputs.values():
@@ -100,12 +118,10 @@ class ComfyUIBridge:
                     subfolder = item.get("subfolder", "")
                     ftype = item.get("type", "output")
                     if fname:
-                        # filename/subfolder 可能含中文、空格、& 等，必须分别编码
-                        # 否则 & 会被当成 query 参数分隔符，URL 损坏
                         fname_enc = quote(str(fname), safe="")
                         subfolder_enc = quote(str(subfolder), safe="")
                         urls.append(
-                            f"{self.base_url}/view?filename={fname_enc}"
+                            f"{root}/view?filename={fname_enc}"
                             f"&subfolder={subfolder_enc}&type={ftype}"
                         )
         return urls

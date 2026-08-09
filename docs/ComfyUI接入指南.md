@@ -1,7 +1,7 @@
 # ComfyUI 接入指南（内部专家必读）
 
-> 面向团队里将要成为"ComfyUI 专家"的 1-2 人。
-> 目标：让你们掌握 ComfyUI，做出工作流模板，**让其他成员不学节点也能用上首尾帧、多参考图、角色一致性等高级能力**。
+> 面向团队里将要成为"ComfyUI 专家"的 1-2 人。  
+> 目标：掌握 ComfyUI，导出工作流模板，**让其他成员在 submit 专业模式不学节点也能用高级能力**。
 
 ---
 
@@ -9,35 +9,70 @@
 
 | 理由 | 说明 |
 |------|------|
-| 行业事实标准 | 2026 年视频创作工具生态最丰富，节点/模板最多 |
-| **不需本地 GPU** | Seedance 节点是**调云端 API**的，ComfyUI 只做"编排界面"，普通电脑能跑 |
-| 原生支持 Seedance 全模式 | 官方 partner node 已支持文生(T2V)、首尾帧(FLF2V)、多参考图(R2V)、真人一致性 |
-| 工作流可复用 | 搭一次存成模板，全团队复用，避免每人重复造轮子 |
-| 与 New-API 协同 | 可配置成走 New-API 网关，统一计费和路由 |
+| 行业事实标准 | 视频创作工具生态节点/模板丰富 |
+| **不需本地 GPU** | Seedance 节点调**云端 API**，ComfyUI 只做编排 |
+| 原生支持 Seedance 全模式 | T2V / FLF2V / R2V / Real Human 等 |
+| 工作流可复用 | 搭一次存模板，全团队复用 |
+| 与 MangaRouter 同机 | VPS 上 `compose profile=comfyui`，无需 VPN |
 
-**关键认知**：在这个团队里，ComfyUI **不是用来跑模型的**（模型在火山引擎云端跑），而是充当"高级创作界面"——用节点连线把首帧、尾帧、参考图、提示词组合起来，生成视频。
+**关键认知**：ComfyUI **不是跑本地大模型**，而是高级创作界面；成片仍由方舟等云端生成。
 
 ---
 
-## 一、安装 ComfyUI（专家电脑，约 30 分钟）
+## 一、安装（主路径：VPS 同机，约 15 分钟）
 
-### 方式 A：官方桌面版（最简单，推荐）
-1. 下载 https://www.comfy.org/download 的桌面版（Windows/Mac）
-2. 安装后启动，自动下载基础环境
-3. 不需要装 CUDA、不需要显卡，因为用云端 API 节点
+### 1. 启用服务
 
-### 方式 B：手动安装（需要 Python 3.10+）
+```bash
+# 在 MangaRouter 仓库根目录
+mkdir -p data/comfyui/{input,output,user,custom_nodes}
+# .env：
+#   COMFYUI_BASE_URL=http://comfyui:8188
+#   COMFYUI_PUBLIC_BASE_URL=https://comfy.your.domain
+COMPOSE_PROFILES=comfyui docker compose up -d --build comfyui
+docker compose --profile comfyui ps
+curl -sf http://127.0.0.1:18188/system_stats   # 本机回环应通
+```
+
+### 2. Caddy 子域名
+
+`deploy/Caddyfile` 已有 `comfy.your.domain` + `basicauth`（用户建议 `expert`）。  
+DNS A 记录：`comfy` → VPS；`caddy hash-password` 写入哈希后 reload。
+
+```bash
+curl -I https://comfy.your.domain   # 无凭证应 401
+```
+
+### 3. 打开工作台
+
+浏览器打开 `https://comfy.your.domain`，用 expert 账号登录，应看到节点编辑器。  
+镜像已含 **ComfyUI-Manager**；Seedance 节点首次用 Manager 安装（见第二节）。
+
+### 双 URL 含义
+
+| 变量 | 用途 |
+|------|------|
+| `COMFYUI_BASE_URL` | submit-tool **容器内**调 API / 归档下载（内网，无 basicauth） |
+| `COMFYUI_PUBLIC_BASE_URL` | 浏览器预览 `/view`（经 Caddy HTTPS） |
+
+团队成员日常看片优先用归档后的 **ShareUrl**（MinIO），不必人人登录 comfy 子域。
+
+---
+
+## 附录：本机安装 + VPN（备选）
+
+仅当不启用同机 profile 时使用。需保证 **VPS 上 submit-tool 能访问** 本机 ComfyUI（Tailscale / WireGuard 等）。
+
+### 方式 A：官方桌面版
+1. 下载 https://www.comfy.org/download  
+2. 启动后按 VPN 虚拟 IP 配置 `.env` 的 `COMFYUI_BASE_URL`
+
+### 方式 B：手动
 ```bash
 git clone https://github.com/comfyanonymous/ComfyUI
-cd ComfyUI
-pip install -r requirements.txt
-python main.py --enable-cors-header --listen 0.0.0.0
+cd ComfyUI && pip install -r requirements.txt
+python main.py --enable-cors-header --listen 0.0.0.0 --port 8188
 ```
-- `--enable-cors-header`：**必须加**，否则 Streamlit 调用桥跨域被拦
-- `--listen 0.0.0.0`：让团队内网可访问（仅 ZeroTier 内网，安全）
-
-### 验证
-浏览器打开 http://localhost:8188 ，看到节点编辑器即成功。
 
 ---
 
@@ -78,8 +113,8 @@ python main.py --enable-cors-header --listen 0.0.0.0
 - 避免在每台电脑都存 API Key
 
 配置方法：在 ComfyUI 的 Seedance 节点里：
-- **API Base URL** 填 New-API 地址（或适配器地址）：`http://<中央节点IP>:18008`
-- **API Key** 填 New-API 的令牌（不是火山引擎原始 Key）
+- **API Base URL**（同机）：`http://new-api:3000` 或适配器 `http://seedance-adapter:18008`（容器网）；浏览器侧若节点只认公网，填 `https://api.your.domain`
+- **API Key** 填 New-API 令牌（不是火山原始 Key）
 
 > 这样 ComfyUI → New-API/适配器 → 火山引擎，链路统一。
 
@@ -157,9 +192,9 @@ python main.py --enable-cors-header --listen 0.0.0.0
 **学成标志**：能给同事的任意"我想要这个效果"需求，30 分钟内搭出工作流并存成模板；专业模式跑通后 NocoDB 可见 ShareUrl。
 
 **验收（Day 6 Check）**
-1. 用真实 API JSON 替换 `submit-tool/templates/` 骨架（未替换勿选该模板生产）
-2. 配置 `COMFYUI_BASE_URL`，提交后页面预览成片
-3. 确认 MinIO `projects/{ProjectKey}/comfyui/...` 有对象，NocoDB Status=succeeded 且 ShareUrl 非空
+1. `COMPOSE_PROFILES=comfyui` 已启动；`comfy.*` 无凭证 401
+2. 用真实 API JSON 替换 `submit-tool/templates/` 骨架
+3. `.env` 双 URL 已配；专业模式提交后 NocoDB 有 ShareUrl；MinIO 路径含 `projects/{ProjectKey}/comfyui/`
 
 ---
 
@@ -172,7 +207,7 @@ A：API Key 错了，或 New-API 令牌没绑定对应分组。检查令牌权�
 A：Manager 里装 ByteDance 官方节点包后重启。仍找不到用第三方 Jimeng-API 插件替代。
 
 **Q：Streamlit 专业模式提交后 ComfyUI 没反应？**
-A：①ComfyUI 启动时要加 `--enable-cors-header`；②检查 ComfyUI 地址对不对；③看 ComfyUI 后台日志。
+A：①确认 `COMFYUI_BASE_URL=http://comfyui:8188` 且 comfyui 容器 healthy；②本机外挂时加 `--enable-cors-header` 且 VPS 可达；③看 `docker compose logs comfyui`。
 
 **Q：占位符没被替换？**
 A：占位符必须独占一个值字段（`"image": "{{first_frame_img}}"`），不能写半截（`"image": "prefix_{{x}}"` 部分场景支持但建议整体占位）。

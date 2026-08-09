@@ -12,6 +12,8 @@
 #   7. submit-tool      —— 分镜提交工具（标准+ComfyUI模式）
 #   8. cost-sync        —— 计费同步（loop 守护）
 #   9. cost-dashboard   —— 成本看板
+#  10. admin-tool       —— 管理员渠道配置
+#  11. comfyui          —— 可选 profile：同机 ComfyUI 专业工作台
 #
 # 启动：  docker compose up -d
 # 停止：  docker compose down
@@ -317,6 +319,7 @@ services:
       SUBMIT_MINIO_PUBLIC_SECURE: "${SUBMIT_MINIO_PUBLIC_SECURE:-true}"
       SUBMIT_MINIO_PRESIGN_SECONDS: "${SUBMIT_MINIO_PRESIGN_SECONDS:-7200}"
       COMFYUI_BASE_URL: "${COMFYUI_BASE_URL:-}"
+      COMFYUI_PUBLIC_BASE_URL: "${COMFYUI_PUBLIC_BASE_URL:-}"
       REVIEW_WEBHOOK_URL: "${REVIEW_WEBHOOK_URL:-}"
       WORKER_POLL_SECONDS: "${WORKER_POLL_SECONDS:-15}"
       WORKER_ACTIVE_HOURS: "${WORKER_ACTIVE_HOURS:-}"
@@ -358,7 +361,38 @@ services:
       WORKER_POLL_SECONDS: "${WORKER_POLL_SECONDS:-15}"
       WORKER_ACTIVE_HOURS: "${WORKER_ACTIVE_HOURS:-}"
       COMFYUI_BASE_URL: "${COMFYUI_BASE_URL:-}"
+      COMFYUI_PUBLIC_BASE_URL: "${COMFYUI_PUBLIC_BASE_URL:-}"
     command: ["python", "worker.py"]
+
+  # ---------------------------------------------------------------------------
+  # ComfyUI 专业工作台（同机 CPU；Seedance 走云端 API）
+  # 启用：COMPOSE_PROFILES=comfyui docker compose up -d comfyui
+  # 访问：Caddy comfy.your.domain → 127.0.0.1:18188（必须 basicauth）
+  # submit-tool 内网：COMFYUI_BASE_URL=http://comfyui:8188
+  # ---------------------------------------------------------------------------
+  comfyui:
+    profiles: ["comfyui"]
+    build: ./comfyui
+    image: seedance-comfyui
+    container_name: seedance-comfyui
+    restart: always
+    logging: *default-logging
+    mem_limit: 4g
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data/comfyui/input:/opt/ComfyUI/input
+      - ./data/comfyui/output:/opt/ComfyUI/output
+      - ./data/comfyui/user:/opt/ComfyUI/user
+      - ./data/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
+    ports:
+      - "127.0.0.1:${COMFYUI_PORT:-18188}:8188"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8188/system_stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # ---------------------------------------------------------------------------
   # 管理员配置页：New-API 渠道/令牌薄封装（密钥仍存 New-API）

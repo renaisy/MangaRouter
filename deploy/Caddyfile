@@ -1,6 +1,6 @@
 # MangaRouter 腾讯云 VPS 反代（Caddy）—— 子域名 + 基础鉴权
 #
-# DNS：api / collab / submit / dash / admin / s3 → VPS 公网 IP
+# DNS：api / collab / submit / dash / admin / comfy / s3 → VPS 公网 IP
 # MinIO 控制台默认不对公网开放（请用 SSH 隧道：ssh -L 19001:127.0.0.1:19001 vps）
 #
 # 生成 basicauth 哈希：caddy hash-password
@@ -49,6 +49,14 @@ admin.your.domain {
 		admin $2a$14$REPLACE_WITH_CADDY_ADMIN_HASH_PASSWORD
 	}
 	reverse_proxy 127.0.0.1:18503
+}
+
+# ComfyUI 专家工作台（同机 compose profile=comfyui；勿裸奔 18188）
+comfy.your.domain {
+	basicauth {
+		expert $2a$14$REPLACE_WITH_CADDY_COMFY_HASH_PASSWORD
+	}
+	reverse_proxy 127.0.0.1:18188
 }
 
 # MinIO S3 API（方舟拉预签名图）。桶保持 private。

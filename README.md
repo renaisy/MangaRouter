@@ -3,11 +3,11 @@
 > 漫剧团队的 **Seedance 智能路由 + 协作** 方案。  
 > 默认部署在 **腾讯云 VPS**（HTTPS 子域名），开源组件 + 少量定制。
 
-[![版本](https://img.shields.io/badge/version-0.8.0-blue)](./CHANGELOG.md)
+[![版本](https://img.shields.io/badge/version-0.8.1-blue)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![CI](https://img.shields.io/badge/CI-pytest-brightgreen)](./.github/workflows/ci.yml)
 
-**现状（v0.8.0）**：VPS 协作闭环 ✅ · 安全硬化 ✅ · admin-tool ✅ · ComfyUI 归档闭环 ✅ · 多剧 ProjectKey ✅ · 指纹缓存/定时窗口 ✅
+**现状（v0.8.1）**：VPS 协作闭环 ✅ · ComfyUI 可同机 profile 部署（`comfy.*`）✅ · admin-tool / 多剧 / 缓存 ✅
 
 > 公网上线前必读：[`docs/安全审查.md`](docs/安全审查.md) · [`docs/RULES.md`](docs/RULES.md) · [`docs/部署指南.md`](docs/部署指南.md)
 
@@ -29,12 +29,12 @@
 
 ```
 团队浏览器 ──HTTPS──► Caddy（仅 80/443）
-                        ├ api / collab / submit / dash / admin / s3
+                        ├ api / collab / submit / dash / admin / comfy / s3
 Docker:
   submit-tool ──► New-API ──► seedance-adapter ──► 火山方舟
-  admin-tool ──► New-API 管理 API（渠道/令牌；密钥仍存 New-API）
-  submit-worker ──► 扫 running ──► 归档 MinIO ──► 回填 NocoDB
-  cost-sync / cost-dashboard
+  submit-tool ──► comfyui（可选 profile；专业模式）
+  admin-tool ──► New-API 管理 API
+  submit-worker / cost-sync / cost-dashboard
 ```
 
 详见 [`docs/部署指南.md`](docs/部署指南.md)。
@@ -61,6 +61,7 @@ deploy/           # Caddy / VPS 初始化 / 备份
 seedance-adapter/ # FastAPI 方舟适配器（鉴权）
 submit-tool/      # Streamlit 提交 + worker
 admin-tool/       # Streamlit 管理员渠道/令牌配置
+comfyui/          # 同机 ComfyUI（compose profile=comfyui）
 cost-sync/        # 计费同步
 cost-dashboard/   # 成本看板
 nocodb-init/      # 表结构初始化

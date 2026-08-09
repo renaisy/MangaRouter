@@ -7,6 +7,20 @@
 
 ---
 
+## [0.8.1] - 2026-08-10
+
+### ComfyUI 同机部署 + 子域名工作台
+
+- **compose**：`comfyui` 服务（CPU 镜像，`profiles: [comfyui]`）；数据卷 `data/comfyui/`
+- **Caddy**：`comfy.*` + `expert` basicauth → `127.0.0.1:18188`
+- **双 URL**：`COMFYUI_BASE_URL`（内网 API/归档）+ `COMFYUI_PUBLIC_BASE_URL`（浏览器预览）
+- **文档**：接入指南主路径改为 VPS 同机；本机+VPN 降为附录
+
+### 测试
+- submit-tool 公网/内网 `output_urls` 单测；`docker compose --profile comfyui config`
+
+---
+
 ## [0.8.0] - 2026-08-09
 
 ### C8 效率与可观测
