@@ -3,16 +3,27 @@
 # 漫剧团队 Seedance 智能路由 + 本地/云端协同 基础设施
 #
 # 包含服务：
-#   1. new-api      —— 智能路由网关（多渠道/权重/计费）
-#   2. nocodb       —— 低代码协作平台（项目/分镜/成本管理）
-#   3. minio        —— S3 兼容对象存储（素材库/成片归档）
-#   4. mysql-newapi —— New-API 数据库
-#   5. mysql-nocodb —— NocoDB 数据库
+#   1. new-api          —— 智能路由网关（多渠道/权重/计费）
+#   2. nocodb           —— 低代码协作平台（项目/分镜/成本管理）
+#   3. minio            —— S3 兼容对象存储（素材库/成片归档）
+#   4. mysql-newapi     —— New-API 数据库
+#   5. mysql-nocodb     —— NocoDB 数据库
+#   6. seedance-adapter —— Seedance 异步任务适配器
+#   7. submit-tool      —— 分镜提交工具（标准+ComfyUI模式）
+#   8. cost-sync        —— 计费同步（loop 守护）
+#   9. cost-dashboard   —— 成本看板
 #
 # 启动：  docker compose up -d
 # 停止：  docker compose down
 # 查看日志：docker compose logs -f new-api
 # =============================================================================
+
+# 可复用片段：日志轮转（防 json-file 无限增长写爆磁盘）
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # ---------------------------------------------------------------------------
@@ -24,6 +35,8 @@ services:
     image: calciumion/new-api:v0.6.8.2
     container_name: seedance-newapi
     restart: always
+    logging: *default-logging
+    mem_limit: 1g
     depends_on:
       mysql-newapi:
         condition: service_healthy
@@ -55,6 +68,8 @@ services:
     image: mysql:8.0.46
     container_name: seedance-mysql-newapi
     restart: always
+    logging: *default-logging
+    mem_limit: 1g
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: "${NEWAPI_MYSQL_ROOT_PASSWORD}"
@@ -67,6 +82,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # NocoDB 低代码协作平台
@@ -77,6 +93,8 @@ services:
     image: nocodb/nocodb:2026.08.0
     container_name: seedance-nocodb
     restart: always
+    logging: *default-logging
+    mem_limit: 2g
     depends_on:
       mysql-nocodb:
         condition: service_healthy
@@ -107,6 +125,8 @@ services:
     image: mysql:8.0.46
     container_name: seedance-mysql-nocodb
     restart: always
+    logging: *default-logging
+    mem_limit: 1g
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: "${NOCODB_MYSQL_ROOT_PASSWORD}"
@@ -121,6 +141,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # MinIO 对象存储（素材库 / 成片归档）
@@ -131,6 +152,8 @@ services:
     image: minio/minio:RELEASE.2024-12-18T13-15-44Z
     container_name: seedance-minio
     restart: always
+    logging: *default-logging
+    mem_limit: 1g
     environment:
       TZ: Asia/Shanghai
       MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
@@ -271,3 +294,12 @@ services:
       COMFYUI_BASE_URL: "${COMFYUI_BASE_URL:-http://localhost:8188}"
     ports:
       - "127.0.0.1:${SUBMIT_TOOL_PORT}:18501"
+
+# =============================================================================
+# 网络：所有服务在同一自定义网络内，用服务名（如 new-api/nocodb/minio）互通。
+# 显式声明便于将来按安全边界分网（如把 mysql 隔离到 backend 不暴露给前端服务）。
+# =============================================================================
+networks:
+  default:
+    name: seedance-net
+    driver: bridge

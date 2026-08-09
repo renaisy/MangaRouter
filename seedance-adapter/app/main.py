@@ -37,7 +37,9 @@ async def lifespan(app: FastAPI):
     if not settings.volc_api_key:
         log.warning("VOLC_API_KEY 未配置，调用将失败，请在 .env 中设置")
     yield
-    await _client.aclose()
+    # 判空：启动期若构造失败，_client 仍为 None，shutdown 时不能 None.aclose()
+    if _client is not None:
+        await _client.aclose()
     _client = None
 
 
@@ -84,6 +86,15 @@ class TaskIdResponse(BaseModel):
     status: str = "queued"
 
 
+class VideoStatusResponse(BaseModel):
+    """查询任务状态的响应模型，让 OpenAPI schema 完整、前端可据此生成客户端。"""
+    id: str
+    status: str
+    video_url: str | None = None
+    cover_url: str | None = None
+    error: str | None = None
+
+
 # --------------------------------------------------------------------------- #
 # 路由：方舟原生异步风格
 # --------------------------------------------------------------------------- #
@@ -109,19 +120,19 @@ async def create_video(req: CreateVideoRequest) -> TaskIdResponse:
     return TaskIdResponse(id=task_id)
 
 
-@app.get("/v1/videos/{task_id}")
-async def get_video(task_id: str) -> dict[str, Any]:
+@app.get("/v1/videos/{task_id}", response_model=VideoStatusResponse)
+async def get_video(task_id: str) -> VideoStatusResponse:
     try:
         result = await client().get_task(task_id)
     except VolcError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    return {
-        "id": result.task_id,
-        "status": result.status,
-        "video_url": result.video_url,
-        "cover_url": result.cover_url,
-        "error": result.error,
-    }
+    return VideoStatusResponse(
+        id=result.task_id,
+        status=result.status,
+        video_url=result.video_url,
+        cover_url=result.cover_url,
+        error=result.error,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -150,4 +161,5 @@ async def create_video_sync(req: CreateVideoRequest) -> dict[str, Any]:
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "api_key_configured": bool(get_settings().volc_api_key)}
+    # 仅返回存活状态，不暴露 api_key 是否配置（避免给未授权方探测面）
+    return {"status": "ok"}

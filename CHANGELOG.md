@@ -5,6 +5,39 @@
 
 ---
 
+## [0.3.3] - 2026-08-09
+
+### P2 健壮性与运维加固（第二阶段）
+
+#### cost-sync 健壮性（防静默漏数据）
+- **newapi_client 分页上限保护**：新增 `max_pages` 参数（默认 1000 页=10万条），
+  防止服务端 total 异常导致无限翻页
+- **total 合理性校验**：负数视为脏数据告警退出，而非静默漏数据或死循环
+- **HTTP 错误包装**：4xx/5xx 包装成 RuntimeError 给可读提示（如"请检查 token 权限"），
+  而非裸 httpx 堆栈；非 JSON 响应也包装
+- **aggregator created_at 异常跳过**：<=0 的脏记录跳过，避免算出 1970 年日期污染 Costs 表
+- **aggregator 一次性 round**：金额累加原始 float，最后一次性 round，
+  避免逐步 round 累积浮点偏差（成本核对时对不上）
+
+#### compose 运维加固
+- **自定义 networks**：显式声明 `seedance-net` 桥接网络，便于将来按安全边界分网
+- **日志轮转**：长跑服务（new-api/nocodb/minio/两个mysql）加 `logging: json-file max-size:10m max-file:3`，防日志写爆磁盘
+- **资源限制**：`mem_limit` 分配（mysql 1g、nocodb 2g、其余 1g），防 OOM 拖垮整机
+- **mysql healthcheck 加 start_period: 30s**：冷启动期不误判 unhealthy
+
+#### adapter 小改进
+- **create_and_wait 首跳立即查询**：不再先 sleep 一个完整 interval，对快失败任务减少无谓等待
+- **指数退避**：长任务轮询间隔指数增长（上限 60s），不再固定间隔频繁打上游
+- **get_video 加 response_model**：OpenAPI schema 完整，前端可据此生成类型化客户端
+- **lifespan 关闭判空**：启动期构造失败时 shutdown 不再 None.aclose() 崩溃
+- **/health 收紧**：去掉 api_key_configured 字段，不向未授权方暴露密钥配置状态
+
+### 测试
+- cost-sync 新增 4 个用例（max_pages 上限、HTTP 错误包装、created_at 跳过、一次性 round）
+- 全部 **42 个测试通过**（adapter 9 + cost-sync 18 + nocodb-init 15）
+
+---
+
 ## [0.3.2] - 2026-08-09
 
 ### 验证发现的问题修复（重点验证 v0.3.1 改动后的真实联调）

@@ -85,13 +85,22 @@ class NewAPIClient:
         *,
         log_type: int = 2,
         page_size: int = 100,
+        max_pages: int = 1000,
     ) -> Iterator[LogEntry]:
         """分页拉取指定时间范围内、指定类型的全部日志。
 
         用生成器逐条 yield，避免大时间范围一次性吃爆内存。
+
+        v0.3.3 加固：
+          - max_pages 硬上限（默认 1000 页 = 10万条），防止服务端 total 异常导致无限翻页
+          - total 合理性校验（负数/过大视为脏数据告警退出，而非静默漏数据或死循环）
+          - HTTP 错误包装成 RuntimeError（4xx 给可读提示而非裸堆栈）
         """
         page = 1
         while True:
+            if page > max_pages:
+                print(f"[warn] 已达分页上限 {max_pages} 页，停止拉取（可能 total 异常或数据量超大）")
+                return
             r = self._client.get("/api/log", params={
                 "p": page,
                 "page_size": page_size,
@@ -99,8 +108,18 @@ class NewAPIClient:
                 "start_timestamp": start_timestamp,
                 "end_timestamp": end_timestamp,
             })
-            r.raise_for_status()
-            body = r.json()
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                # 401/403/500 等给出可读提示，而不是英文堆栈
+                raise RuntimeError(
+                    f"New-API 拉日志失败 HTTP {e.response.status_code}"
+                    f"（请检查 token 权限/参数）：{e.response.text[:200]}"
+                ) from e
+            try:
+                body = r.json()
+            except ValueError as e:
+                raise RuntimeError(f"New-API 返回非 JSON：{r.text[:200]}") from e
             if not body.get("success"):
                 raise RuntimeError(f"New-API 返回失败：{body.get('message')}")
             data = body.get("data") or {}
@@ -124,8 +143,11 @@ class NewAPIClient:
                     prompt_tokens=_to_int(it.get("prompt_tokens")),
                     completion_tokens=_to_int(it.get("completion_tokens")),
                 )
-            # 下一页
+            # 下一页：total 合理性校验
             total = _to_int(data.get("total"))
+            if total < 0:
+                print(f"[warn] total 为负数（{total}），视为脏数据，停止拉取")
+                return
             if page * page_size >= total:
                 return
             page += 1

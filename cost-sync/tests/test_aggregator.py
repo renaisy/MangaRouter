@@ -181,3 +181,87 @@ def test_upsert_many_counts_failures():
     assert stats["failed"] == 2
     assert stats["inserted"] == 0
     assert stats["updated"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# v0.3.3 新增：created_at 异常跳过 + 一次性 round
+# --------------------------------------------------------------------------- #
+def test_aggregate_skips_invalid_created_at():
+    """created_at<=0 的脏记录应跳过，不产生 1970 年的脏行。"""
+    ts = int(datetime(2026, 8, 8, 12, 0, tzinfo=CN_TZ).timestamp())
+    entries = [
+        _log(ts),        # 正常
+        _log(0),         # 异常：created_at=0
+        _log(-1),        # 异常：负数
+    ]
+    agg = aggregate(entries)
+    # 只有 1 条正常记录进了聚合，无 1970 年的行
+    assert len(agg) == 1
+    only = next(iter(agg.values()))
+    assert only.calls == 1
+
+
+def test_aggregate_rounds_once_not_incrementally():
+    """金额应累加原始 float 最后一次性 round，避免逐步 round 累积偏差。
+
+    构造会触发浮点误差的场景：0.1+0.2 != 0.3。
+    """
+    ts = int(datetime(2026, 8, 8, tzinfo=CN_TZ).timestamp())
+    # 每条 quota=50000 → 0.1 元（按 QUOTA_PER_YUAN=500000）
+    entries = [_log(ts, quota=50_000) for _ in range(3)]
+    agg = aggregate(entries)
+    only = next(iter(agg.values()))
+    # 3 × 0.1 = 0.3，一次性 round 应精确等于 0.3（逐步 round 也碰巧对，这里主要防回归）
+    assert only.amount_yuan == 0.3
+
+
+# --------------------------------------------------------------------------- #
+# v0.3.3 新增：fetch_logs 分页上限与异常包装（用 MockTransport）
+# --------------------------------------------------------------------------- #
+def test_fetch_logs_respects_max_pages(monkeypatch):
+    """max_pages 上限应生效，防止 total 异常导致无限翻页。"""
+    import json
+    from newapi_client import NewAPIClient
+    import httpx
+
+    c = NewAPIClient("http://x", "t")
+    call_count = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        # 每页都返回 1 条 + total=999999（诱使无限翻页）
+        return httpx.Response(200, json={
+            "success": True,
+            "data": {"items": [{"id": 1, "created_at": 1700000000, "quota": 1000}],
+                     "total": 999999},
+        })
+
+    # 替换 client 时必须保留 base_url（否则相对路径 /api/log 无法解析）
+    c._client = httpx.Client(base_url="http://x", transport=httpx.MockTransport(handler),
+                             headers=dict(c._client.headers), timeout=5)
+    try:
+        list(c.fetch_logs(1, 2, max_pages=3))
+        # 应该在 3 页后停止
+        assert call_count["n"] == 3
+    finally:
+        c.close()
+
+
+def test_fetch_logs_wraps_http_error():
+    """4xx 应包装成 RuntimeError（可读提示），而非裸 HTTPStatusError 堆栈。"""
+    from newapi_client import NewAPIClient
+    import httpx
+
+    c = NewAPIClient("http://x", "t")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"message": "unauthorized"})
+
+    c._client = httpx.Client(base_url="http://x", transport=httpx.MockTransport(handler),
+                             headers=dict(c._client.headers), timeout=5)
+    try:
+        import pytest
+        with pytest.raises(RuntimeError, match="拉日志失败 HTTP 401"):
+            list(c.fetch_logs(1, 2))
+    finally:
+        c.close()

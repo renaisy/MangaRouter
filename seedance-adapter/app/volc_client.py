@@ -153,11 +153,26 @@ class VolcClient:
         )
 
     async def create_and_wait(self, *args: Any, **kwargs: Any) -> TaskResult:
-        """提交任务并轮询直到完成/超时。便捷封装。参数透传给 create_task。"""
+        """提交任务并轮询直到完成/超时。便捷封装。参数透传给 create_task。
+
+        v0.3.3 改进：
+          - 首跳立即查询（不先 sleep），对快失败任务减少无谓等待
+          - 指数退避 + 上限，长任务不再固定间隔频繁打上游
+        """
         task_id = await self.create_task(*args, **kwargs)
         deadline = time.time() + self.s.poll_max_seconds
+        base = max(self.s.poll_interval_seconds, 2)
+        attempt = 0
+        # 首跳立即查一次
+        result = await self.get_task(task_id)
+        if result.status in ("succeeded", "failed"):
+            return result
         while time.time() < deadline:
-            await asyncio.sleep(self.s.poll_interval_seconds)
+            # 指数退避：base * 2^n，上限 60s，避免长任务频繁打上游
+            wait = min(base * (2 ** attempt), 60)
+            wait = min(wait, max(deadline - time.time(), 0))
+            await asyncio.sleep(wait)
+            attempt += 1
             result = await self.get_task(task_id)
             if result.status in ("succeeded", "failed"):
                 return result

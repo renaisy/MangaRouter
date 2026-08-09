@@ -38,9 +38,20 @@ class AggValue:
 
 
 def aggregate(entries: Iterable[LogEntry]) -> dict[AggKey, AggValue]:
-    """把日志流聚合成 {AggKey: AggValue}。"""
+    """把日志流聚合成 {AggKey: AggValue}。
+
+    v0.3.3 加固：
+      - created_at 异常值（<=0）跳过，避免算出 1970 年脏日期污染 Costs 表
+      - amount 累加原始 float，最后一次性 round（逐步 round 会累积浮点偏差）
+    """
     result: dict[AggKey, AggValue] = defaultdict(AggValue)
+    # 用单独的 float 累加器，最后一次性 round，避免逐步 round 累积偏差
+    raw_amounts: dict[AggKey, float] = defaultdict(float)
+    skipped = 0
     for e in entries:
+        if e.created_at <= 0:
+            skipped += 1
+            continue
         date = datetime.fromtimestamp(e.created_at, tz=CN_TZ).strftime("%Y-%m-%d")
         key = AggKey(
             date=date,
@@ -53,5 +64,10 @@ def aggregate(entries: Iterable[LogEntry]) -> dict[AggKey, AggValue]:
         v.calls += 1
         v.prompt_tokens += e.prompt_tokens
         v.completion_tokens += e.completion_tokens
-        v.amount_yuan = round(v.amount_yuan + e.amount_yuan, 4)
+        raw_amounts[key] += e.amount_yuan
+    if skipped:
+        print(f"[warn] 聚合时跳过 {skipped} 条 created_at 异常（<=0）的脏记录")
+    # 最后一次性 round
+    for key, total in raw_amounts.items():
+        result[key].amount_yuan = round(total, 4)
     return dict(result)
